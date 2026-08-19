@@ -1,0 +1,31 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'nashwu0117'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            if [ ! -d /opt/sub-for-creator/.git ]; then
+              git clone https://github.com/${{ github.repository }}.git /opt/sub-for-creator
+            fi
+            cd /opt/sub-for-creator
+            git pull --ff-only
+            cp -n .env.example .env
+            docker compose up -d --build
+            docker image prune -f

@@ -52,6 +52,8 @@ flowchart LR
 
 ## 快速開始
 
+> 📖 想部署成公開服務？完整教學見 **[DEPLOY.md](DEPLOY.md)**（VPS / PaaS / GitHub Actions 自動部署 / 常見問題）。
+
 ### A. 在 GitHub 上直接試用（推薦）
 
 不需要自己的電腦，任何有 GitHub 帳號的人都能開：
