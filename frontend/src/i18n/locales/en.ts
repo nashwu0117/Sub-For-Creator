@@ -189,6 +189,7 @@ const en = {
     license: "Sub for Creator is released under AGPL-3.0 — open source and free to use.",
     privacy: "Privacy Policy",
     terms: "Terms of Service",
+    developer: "Developed by NashWu",
   },
   notFound: {
     title: "Page not found",

@@ -189,6 +189,7 @@ const zhCN = {
     license: "Sub for Creator 以 AGPL-3.0 授权释出，开源免费使用。",
     privacy: "隐私权政策",
     terms: "服务条款",
+    developer: "由 NashWu 开发",
   },
   notFound: {
     title: "找不到这个页面",

@@ -189,6 +189,7 @@ const zhTW = {
     license: "Sub for Creator 以 AGPL-3.0 授權釋出，開源免費使用。",
     privacy: "隱私權政策",
     terms: "服務條款",
+    developer: "由 NashWu 開發",
   },
   notFound: {
     title: "找不到這個頁面",

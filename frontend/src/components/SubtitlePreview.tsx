@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import type { EditorStyle, Segment } from "../types";
 
 interface Props {
@@ -41,12 +42,14 @@ export default function SubtitlePreview({ segments, currentTime, style }: Props)
       {active && (
         <div
           className="subtitle-preview-text"
-          style={{
-            fontSize: style.fontSize,
-            color: style.fontColor,
-            fontWeight: style.bold ? 700 : 400,
-            textShadow: shadow,
-          }}
+          style={
+            {
+              "--preview-font-size": `${style.fontSize}px`,
+              color: style.fontColor,
+              fontWeight: style.bold ? 700 : 400,
+              textShadow: shadow,
+            } as CSSProperties
+          }
         >
           {activeWords
             ? activeWords.map((w, i) => (

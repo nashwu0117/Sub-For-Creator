@@ -170,7 +170,8 @@ textarea {
   max-width: var(--content-max);
   height: 100%;
   margin: 0 auto;
-  padding: 0 var(--space-6);
+  padding: 0 max(var(--space-6), env(safe-area-inset-right, 0px)) 0
+    max(var(--space-6), env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   gap: var(--space-6);
@@ -182,8 +183,9 @@ textarea {
   gap: var(--space-2);
   font-size: 17px;
   font-weight: 900;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.2px;
   color: var(--text);
+  min-width: 0;
 }
 
 .logo-mark {
@@ -315,6 +317,18 @@ textarea {
 
 .site-footer a:hover {
   color: var(--text);
+}
+
+.footer-credit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.footer-developer {
+  color: var(--text-faint);
+  font-size: 12px;
+  letter-spacing: 0.2px;
 }
 
 /* ---------- 按鈕 ---------- */
@@ -904,6 +918,12 @@ textarea {
   gap: var(--space-3);
 }
 
+.error-box > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* 作業狀態卡 */
 .job-card {
   margin-top: var(--space-6);
@@ -1205,6 +1225,7 @@ textarea {
 .subtitle-preview-text {
   display: inline-block;
   max-width: 100%;
+  font-size: var(--preview-font-size, 64px);
   line-height: 1.35;
   font-weight: 700;
   word-break: break-word;
@@ -1789,23 +1810,49 @@ textarea {
   }
 
   .subtitle-list {
-    max-height: 420px;
+    max-height: 46vh;
   }
 }
 
+/* 手機版：兩列式 header + 大字輸入（避免 iOS 自動縮放）+ 加大觸控目標 */
 @media (max-width: 640px) {
   .app-main {
-    padding: var(--space-6) var(--space-4) var(--space-12);
+    padding: var(--space-6) var(--space-4)
+      calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* header 兩列：logo／語言／GitHub 一列，導覽一列 */
+  .site-header {
+    height: auto;
+    min-height: 52px;
   }
 
   .site-header-inner {
-    padding: 0 var(--space-4);
-    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: calc(var(--space-2) + env(safe-area-inset-top, 0px))
+      max(var(--space-4), env(safe-area-inset-right, 0px))
+      calc(var(--space-2) + env(safe-area-inset-bottom, 0px))
+      max(var(--space-4), env(safe-area-inset-left, 0px));
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .site-nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    gap: var(--space-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .site-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .site-nav a {
-    padding: var(--space-2);
-    font-size: 13px;
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+    white-space: nowrap;
   }
 
   .github-link span {
@@ -1818,6 +1865,16 @@ textarea {
 
   .lang-switcher {
     margin-right: 0;
+  }
+
+  .lang-switcher-select {
+    font-size: 16px;
+    min-height: 40px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .logo {
+    gap: var(--space-2);
   }
 
   .hero {
@@ -1833,12 +1890,23 @@ textarea {
     align-items: stretch;
   }
 
+  .upload-options .field {
+    min-width: 0;
+  }
+
   .export-grid {
     grid-template-columns: 1fr;
   }
 
   .editor-header h1 {
     max-width: 100%;
+  }
+
+  .editor-header .back-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) 0;
   }
 
   .style-row {
@@ -1851,8 +1919,112 @@ textarea {
     flex-wrap: wrap;
   }
 
+  /* 時間輸入獨立成列，加大觸控 */
   .subtitle-time-inputs {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .subtitle-delete {
+    margin-left: auto;
+  }
+
+  .time-input {
+    flex: 1 1 64px;
+    min-width: 56px;
+    min-height: 40px;
+    font-size: 16px;
+  }
+
+  .subtitle-textarea {
+    font-size: 16px;
+  }
+
+  .text-input,
+  .select-input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  input[type="file"].text-input {
+    min-height: 44px;
+  }
+
+  .color-input-wrap .color-input {
+    width: 44px;
+    height: 36px;
+  }
+
+  .range-input {
+    height: 28px;
+    background: transparent;
+  }
+
+  .range-input::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .range-input::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* 字幕預覽：不遮原生控制列 */
+  .subtitle-preview.is-bottom {
+    bottom: 20%;
+  }
+
+  .subtitle-preview-text {
+    font-size: clamp(18px, 11vw, var(--preview-font-size, 64px));
+  }
+
+  .subtitle-preview.is-top .subtitle-preview-text {
+    font-size: clamp(16px, 9vw, calc(var(--preview-font-size, 64px) * 0.8));
+  }
+
+  .card {
+    padding: var(--space-5);
+  }
+
+  .toast {
+    bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .site-footer {
+    padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 小手機：字級與間距再壓縮 */
+@media (max-width: 400px) {
+  .logo {
+    font-size: 15px;
+  }
+
+  .logo-mark {
+    width: 26px;
+    height: 26px;
+  }
+
+  .hero h1 {
+    font-size: clamp(26px, 8vw, 34px);
+  }
+
+  .hero-sub {
+    font-size: 15px;
+  }
+
+  .upload-zone-title {
+    font-size: 15px;
+  }
+
+  .card {
+    padding: var(--space-4);
+  }
+
+  .subtitle-time-inputs {
+    gap: var(--space-1);
   }
 }@media (prefers-reduced-motion: reduce) {
   *,
@@ -2070,7 +2242,7 @@ body {
 }
 
 .waveform-container {
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   cursor: crosshair;
 }
@@ -2135,6 +2307,18 @@ body {
   }
 }
 
+/* 觸控裝置沒有 hover：取消懸浮位移，只在按下時回饋 */
+@media (hover: none) {
+  .btn:hover:not(:disabled),
+  .export-btn:hover:not(:disabled),
+  .recent-item:hover,
+  .upload-zone:hover,
+  .subtitle-item:hover,
+  .logo:hover .logo-mark {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .site-header,
   .card,
@@ -2173,7 +2357,16 @@ body {
   .btn,
   .nudge-btn,
   .subtitle-delete,
-  .file-clear {
+  .file-clear,
+  .time-input,
+  .subtitle-textarea,
+  .text-input,
+  .select-input,
+  .lang-switcher-select,
+  .back-link,
+  .site-nav a,
+  .github-link,
+  .color-input {
     min-height: 44px;
   }
 
