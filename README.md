@@ -2,10 +2,13 @@
 
 免費、開源的 AI 影片字幕工具。上傳影片，自動完成語音辨識與斷句，在網頁編輯器裡微調，再匯出成你需要的任何字幕格式。
 
+🔗 **GitHub**：https://github.com/nashwu0117/Sub-For-Creator
+
 ![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-blue.svg)
+![CI](https://img.shields.io/github/actions/workflow/status/nashwu0117/Sub-For-Creator/ci.yml)
 
 ## 功能
 
