@@ -24,7 +24,12 @@ export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
   const filename = meta.filename ?? job.job_id;
 
   return (
-    <div className="card job-card">
+    <div
+      className="card job-card"
+      role={status === "failed" ? "alert" : "status"}
+      aria-live="polite"
+      aria-atomic="true"
+    >
       <div className="job-card-header">
         <span className={`status-chip ${status}`}>
           <span className="status-dot" aria-hidden="true" />

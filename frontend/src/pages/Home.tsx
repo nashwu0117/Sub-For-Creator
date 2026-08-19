@@ -194,7 +194,7 @@ export default function Home() {
       )}
 
       {configError && (
-        <div className="error-box" style={{ maxWidth: 720, margin: "0 auto var(--space-8)" }}>
+        <div className="error-box" role="alert" aria-live="assertive" style={{ maxWidth: 720, margin: "0 auto var(--space-8)" }}>
           <span>無法取得伺服器設定：{configError}</span>
         </div>
       )}

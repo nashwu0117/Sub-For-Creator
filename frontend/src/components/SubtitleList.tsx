@@ -26,7 +26,11 @@ export default function SubtitleList({
   // 播放中的片段自動捲入視野
   useEffect(() => {
     if (activeId === null) return;
-    itemRefs.current.get(activeId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    itemRefs.current.get(activeId)?.scrollIntoView({
+      block: "nearest",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
   }, [activeId]);
 
   const updateSegment = useCallback(

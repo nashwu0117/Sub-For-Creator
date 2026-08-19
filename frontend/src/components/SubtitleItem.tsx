@@ -45,16 +45,20 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
     <div
       className={`subtitle-item${active ? " active" : ""}`}
       onClick={() => onSeek(segment.start)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
-          onSeek(segment.start);
-        }
-      }}
+      aria-current={active ? "true" : undefined}
     >
       <div className="subtitle-item-top">
-        <span className="subtitle-index">{String(index + 1).padStart(2, "0")}</span>
+        <button
+          type="button"
+          className="subtitle-index subtitle-seek"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSeek(segment.start);
+          }}
+          aria-label={`跳到片段 ${index + 1}`}
+        >
+          {String(index + 1).padStart(2, "0")}
+        </button>
         <div className="subtitle-time-inputs" onClick={(e) => e.stopPropagation()}>
           <input
             className="time-input"

@@ -33,7 +33,7 @@ export default function Header() {
         <span className="header-spacer" />
         <a
           className="github-link"
-          href="https://github.com/Sub-For-Creator/Sub-For-Creator"
+          href="https://github.com/nashwu0117/Sub-For-Creator"
           target="_blank"
           rel="noopener noreferrer"
         >

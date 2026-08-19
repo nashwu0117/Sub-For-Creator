@@ -1781,14 +1781,332 @@ textarea {
   .subtitle-time-inputs {
     flex: 1 1 auto;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
+}@media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   Apple-inspired interaction layer
+   即時回饋 · 材質層次 · 可中斷的直接操作 · 無障礙動效
+   ============================================================ */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang TC",
+    "Hiragino Sans GB", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
+  --transition-fast: 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition: 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --surface-material: rgba(23, 26, 33, 0.72);
+  --surface-material-strong: rgba(29, 33, 43, 0.86);
+  --focus-ring: rgba(56, 189, 248, 0.82);
+}
+
+body {
+  font-optical-sizing: auto;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 12% -10%, rgba(109, 94, 242, 0.15), transparent 34rem),
+    radial-gradient(circle at 92% 12%, rgba(56, 189, 248, 0.08), transparent 30rem);
+}
+
+.site-header {
+  border-bottom: 0;
+  background: rgba(15, 17, 21, 0.68);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+.site-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -10px;
+  left: 0;
+  height: 10px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(15, 17, 21, 0.22), transparent);
+}
+
+.logo-mark,
+.github-link,
+.btn,
+.upload-zone,
+.recent-item,
+.export-btn,
+.nudge-btn,
+.subtitle-delete,
+.file-clear,
+.subtitle-seek {
+  touch-action: manipulation;
+}
+
+.logo-mark {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.logo:hover .logo-mark {
+  transform: scale(1.04);
+  box-shadow: 0 5px 18px rgba(109, 94, 242, 0.55);
+}
+
+.github-link,
+.btn,
+.export-btn,
+.recent-item,
+.nudge-btn,
+.subtitle-delete,
+.file-clear {
+  will-change: transform;
+}
+
+.btn:hover:not(:disabled),
+.export-btn:hover:not(:disabled),
+.recent-item:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled),
+.export-btn:active:not(:disabled),
+.nudge-btn:active,
+.subtitle-delete:active,
+.file-clear:active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
+}
+
+.btn:focus-visible,
+.github-link:focus-visible,
+.site-nav a:focus-visible,
+.logo:focus-visible,
+.recent-item:focus-visible,
+.export-btn:focus-visible,
+.nudge-btn:focus-visible,
+.subtitle-delete:focus-visible,
+.file-clear:focus-visible,
+.subtitle-seek:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.card,
+.waveform-card,
+.limits-banner,
+.recent-item {
+  background: var(--surface-material);
+  border-color: rgba(166, 181, 220, 0.18);
+  -webkit-backdrop-filter: saturate(140%) blur(18px);
+  backdrop-filter: saturate(140%) blur(18px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.job-card,
+.waveform-card {
+  background: var(--surface-material-strong);
+}
+
+.text-input,
+.select-input,
+.time-input,
+.subtitle-textarea {
+  background: rgba(12, 15, 22, 0.58);
+  border-color: rgba(166, 181, 220, 0.2);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.text-input:focus,
+.select-input:focus,
+.time-input:focus,
+.subtitle-textarea:focus {
+  background: rgba(12, 15, 22, 0.78);
+}
+
+.text-input:focus-visible,
+.select-input:focus-visible,
+.time-input:focus-visible,
+.subtitle-textarea:focus-visible,
+.range-input:focus-visible,
+.color-input:focus-visible,
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.upload-zone {
+  background: rgba(23, 26, 33, 0.68);
+  border-color: rgba(166, 181, 220, 0.27);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 36px rgba(0, 0, 0, 0.12);
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition), transform var(--transition-fast);
+}
+
+.upload-zone:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 42px rgba(0, 0, 0, 0.2);
+}
+
+.upload-zone.dragging {
+  transform: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 4px var(--accent-soft-2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.progress-fill {
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.subtitle-list {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+.subtitle-item {
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.subtitle-item:hover {
+  transform: translateY(-1px);
+}
+
+.subtitle-item.active {
+  box-shadow: 0 0 0 1px var(--accent-1), 0 10px 24px rgba(109, 94, 242, 0.12);
+}
+
+.subtitle-item:focus-within {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft-2);
+}
+
+.subtitle-seek {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.subtitle-seek:hover {
+  color: var(--text);
+}
+
+.waveform-container {
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.waveform-container .wavesurfer-region {
+  will-change: left, width;
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.waveform-container .wavesurfer-region:hover,
+.waveform-container .wavesurfer-region:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent-2), 0 0 18px rgba(56, 189, 248, 0.16);
+}
+
+.waveform-container .wavesurfer-region:active {
+  transition: none;
+  box-shadow: 0 0 0 2px var(--accent-2);
+}
+
+.range-input {
+  touch-action: none;
+}
+
+.range-input::-webkit-slider-thumb,
+.range-input::-moz-range-thumb {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.range-input:active::-webkit-slider-thumb {
+  transform: scale(1.16);
+  box-shadow: 0 0 0 6px var(--accent-soft-2);
+}
+
+.toast {
+  -webkit-backdrop-filter: saturate(150%) blur(18px);
+  backdrop-filter: saturate(150%) blur(18px);
+  background: rgba(35, 40, 54, 0.8);
+  border-color: rgba(205, 214, 238, 0.22);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .btn:hover:not(:disabled),
+  .export-btn:hover:not(:disabled),
+  .recent-item:hover,
+  .upload-zone:hover,
+  .subtitle-item:hover,
+  .logo:hover .logo-mark {
+    transform: none;
+  }
+
+  .subtitle-list {
+    scroll-behavior: auto;
+  }
+
+  .waveform-container .wavesurfer-region {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .site-header,
+  .card,
+  .waveform-card,
+  .limits-banner,
+  .recent-item,
+  .toast {
+    background: var(--surface-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .card,
+  .waveform-card,
+  .limits-banner,
+  .recent-item,
+  .upload-zone,
+  .text-input,
+  .select-input,
+  .time-input,
+  .subtitle-textarea {
+    border-color: var(--border-strong);
+  }
+
+  .text-input,
+  .select-input,
+  .time-input,
+  .subtitle-textarea {
+    background: var(--surface-2);
+  }
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .nudge-btn,
+  .subtitle-delete,
+  .file-clear {
+    min-height: 44px;
+  }
+
+  .nudge-btn,
+  .subtitle-delete,
+  .file-clear {
+    min-width: 44px;
   }
 }

@@ -109,7 +109,7 @@ export default function UploadZone({ config, onJobCreated }: Props) {
   const languages = config ? ["auto", ...config.supported_languages] : ["auto"];
 
   return (
-    <div className="upload-section">
+    <div className="upload-section" aria-busy={uploading}>
       <div
         className={`upload-zone${dragging ? " dragging" : ""}`}
         onClick={() => inputRef.current?.click()}
@@ -128,6 +128,7 @@ export default function UploadZone({ config, onJobCreated }: Props) {
           }
         }}
         aria-label="上傳影片或音檔"
+        aria-describedby="upload-zone-hint"
       >
         <div className="upload-zone-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -137,7 +138,7 @@ export default function UploadZone({ config, onJobCreated }: Props) {
           </svg>
         </div>
         <div className="upload-zone-title">拖曳影片或音檔到這裡，或點擊選擇檔案</div>
-        <div className="upload-zone-hint">
+        <div id="upload-zone-hint" className="upload-zone-hint">
           支援常見影片與音訊格式
           {config ? ` · 單檔上限 ${config.max_upload_mb} MB · 最長 ${config.max_duration_min} 分鐘` : ""}
         </div>
@@ -188,7 +189,7 @@ export default function UploadZone({ config, onJobCreated }: Props) {
               ))}
             </select>
           </div>
-          <button className="btn btn-primary" onClick={() => void handleUpload()} disabled={uploading}>
+          <button type="button" className="btn btn-primary" onClick={() => void handleUpload()} disabled={uploading}>
             {uploading ? (
               <>
                 <span className="spinner" aria-hidden="true" />
@@ -211,7 +212,7 @@ export default function UploadZone({ config, onJobCreated }: Props) {
       )}
 
       {error && (
-        <div className="error-box">
+        <div className="error-box" role="alert" aria-live="assertive">
           <span>{error}</span>
           <button className="btn btn-sm btn-danger" onClick={() => setError(null)}>
             關閉

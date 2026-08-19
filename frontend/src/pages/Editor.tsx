@@ -267,7 +267,16 @@ export default function Editor() {
         </aside>
       </div>
 
-      {toast && <div className={`toast${toast.kind === "error" ? " toast-error" : ""}`}>{toast.message}</div>}
+      {toast && (
+        <div
+          className={`toast${toast.kind === "error" ? " toast-error" : ""}`}
+          role={toast.kind === "error" ? "alert" : "status"}
+          aria-live={toast.kind === "error" ? "assertive" : "polite"}
+          aria-atomic="true"
+        >
+          {toast.message}
+        </div>
+      )}
     </>
   );
 }
