@@ -9,7 +9,7 @@ jobs:
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'nashwu0117'
+    if: github.repository_owner == 'nashwu0117' && secrets.VPS_HOST != ''
     steps:
       - uses: actions/checkout@v5
 
