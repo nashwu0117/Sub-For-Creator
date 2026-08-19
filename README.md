@@ -1,5 +1,7 @@
 # Sub for Creator
 
+[English](README.en.md) · [繁體中文](README.md)
+
 免費、開源的 AI 影片字幕工具。上傳影片，自動完成語音辨識與斷句，在網頁編輯器裡微調，再匯出成你需要的任何字幕格式。
 
 🔗 **GitHub**：https://github.com/nashwu0117/Sub-For-Creator
@@ -10,7 +12,7 @@
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-blue.svg)
 ![CI](https://img.shields.io/github/actions/workflow/status/nashwu0117/Sub-For-Creator/ci.yml)
 
-> 🌐 [查看專案介紹網站](https://nashwu0117.github.io/Sub-For-Creator/) · [GitHub Repository](https://github.com/nashwu0117/Sub-For-Creator)
+> 🌐 [查看專案介紹網站](https://nashwu0117.github.io/Sub-For-Creator/) · [English landing page](https://nashwu0117.github.io/Sub-For-Creator/en/) · [GitHub Repository](https://github.com/nashwu0117/Sub-For-Creator)
 
 一個適合創作者的開源字幕工作台：從影片上傳、AI 辨識、時間軸校對，到多格式匯出，全部在同一個流程完成。
 

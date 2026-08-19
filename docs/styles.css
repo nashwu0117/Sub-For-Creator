@@ -168,6 +168,28 @@ a {
   height: 16px;
 }
 
+.nav-language {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  transition: color var(--ease-fluid), border-color var(--ease-fluid), background var(--ease-fluid), transform var(--ease-fluid);
+}
+
+.nav-language:hover {
+  color: #fff;
+  border-color: var(--line-bright);
+  background: rgba(132, 109, 255, 0.12);
+  transform: translateY(-1px);
+}
+
 /* Hero */
 .hero {
   position: relative;
@@ -1722,6 +1744,7 @@ body::before {
 
 .button,
 .nav-github,
+.nav-language,
 .copy-button,
 .main-nav a,
 .footer-links a {
@@ -1801,6 +1824,7 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   .button:hover,
   .nav-github:hover,
+  .nav-language:hover,
   .feature-card:hover,
   .format-row b:hover,
   .format-cloud span:hover,
@@ -1859,6 +1883,7 @@ body::before {
 @media (pointer: coarse) {
   .button,
   .nav-github,
+  .nav-language,
   .copy-button {
     min-height: 44px;
   }
