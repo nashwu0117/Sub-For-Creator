@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { EditorStyle } from "../types";
 import FontSettings from "./FontSettings";
 import StylePresets from "./StylePresets";
@@ -8,14 +9,15 @@ interface Props {
 }
 
 export default function StylePanel({ style, onChange }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="card">
-      <h2 className="card-title">字幕樣式</h2>
+      <h2 className="card-title">{t("stylePanel.title")}</h2>
       <div className="style-panel">
         <div className="field">
           <div className="range-row">
             <span className="field-label" style={{ flex: "0 0 auto" }}>
-              字體大小
+              {t("stylePanel.fontSize")}
             </span>
             <input
               className="range-input"
@@ -24,7 +26,7 @@ export default function StylePanel({ style, onChange }: Props) {
               max={120}
               step={2}
               value={style.fontSize}
-              aria-label="字體大小"
+              aria-label={t("stylePanel.fontSize")}
               onChange={(e) => onChange({ ...style, fontSize: Number(e.target.value) })}
             />
             <span className="range-value">{style.fontSize} px</span>
@@ -32,13 +34,13 @@ export default function StylePanel({ style, onChange }: Props) {
         </div>
 
         <div className="style-row">
-          <span className="field-label">字體顏色</span>
+          <span className="field-label">{t("stylePanel.fontColor")}</span>
           <span className="color-input-wrap">
             <input
               className="color-input"
               type="color"
               value={style.fontColor}
-              aria-label="字體顏色"
+              aria-label={t("stylePanel.fontColor")}
               onChange={(e) => onChange({ ...style, fontColor: e.target.value })}
             />
             <span className="color-hex">{style.fontColor.toUpperCase()}</span>
@@ -46,13 +48,13 @@ export default function StylePanel({ style, onChange }: Props) {
         </div>
 
         <div className="style-row">
-          <span className="field-label">外框顏色</span>
+          <span className="field-label">{t("stylePanel.outlineColor")}</span>
           <span className="color-input-wrap">
             <input
               className="color-input"
               type="color"
               value={style.outlineColor}
-              aria-label="外框顏色"
+              aria-label={t("stylePanel.outlineColor")}
               onChange={(e) => onChange({ ...style, outlineColor: e.target.value })}
             />
             <span className="color-hex">{style.outlineColor.toUpperCase()}</span>
@@ -67,7 +69,7 @@ export default function StylePanel({ style, onChange }: Props) {
               onChange={(e) => onChange({ ...style, bold: e.target.checked })}
             />
             <span className="switch-track" aria-hidden="true" />
-            <span className="switch-label">粗體</span>
+            <span className="switch-label">{t("stylePanel.bold")}</span>
           </label>
         </div>
 
@@ -80,7 +82,7 @@ export default function StylePanel({ style, onChange }: Props) {
                 onChange={(e) => onChange({ ...style, fade: e.target.checked })}
               />
               <span className="switch-track" aria-hidden="true" />
-              <span className="switch-label">淡入淡出</span>
+              <span className="switch-label">{t("stylePanel.fade")}</span>
             </label>
 
             <label className="switch">
@@ -90,14 +92,14 @@ export default function StylePanel({ style, onChange }: Props) {
                 onChange={(e) => onChange({ ...style, karaoke: e.target.checked })}
               />
               <span className="switch-track" aria-hidden="true" />
-              <span className="switch-label">卡拉 OK 模式（逐字高亮）</span>
+              <span className="switch-label">{t("stylePanel.karaoke")}</span>
             </label>
           </div>
         </div>
 
         <div className="field">
           <label className="field-label" htmlFor="subtitle-position">
-            字幕位置
+            {t("stylePanel.position")}
           </label>
           <select
             id="subtitle-position"
@@ -105,8 +107,8 @@ export default function StylePanel({ style, onChange }: Props) {
             value={style.position}
             onChange={(e) => onChange({ ...style, position: e.target.value as EditorStyle["position"] })}
           >
-            <option value="bottom">底部</option>
-            <option value="top">頂部</option>
+            <option value="bottom">{t("stylePanel.bottom")}</option>
+            <option value="top">{t("stylePanel.top")}</option>
           </select>
         </div>
 

@@ -107,6 +107,23 @@ export interface FontItem {
   uploaded_at: string;
 }
 
+/** 內建的免費字型（GET /api/fonts → system_fonts，可直接選用與下載） */
+export interface SystemFont {
+  name: string;
+  family: string;
+  filename: string;
+  size: number;
+  license: string;
+  license_url: string;
+  available: boolean;
+}
+
+/** GET /api/fonts 回應 */
+export interface FontsResponse {
+  fonts: FontItem[];
+  system_fonts: SystemFont[];
+}
+
 /** 已儲存的樣式預設（localStorage `sfc_style_presets`） */
 export interface StylePreset {
   id: string;

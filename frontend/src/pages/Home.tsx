@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getConfig, getJob } from "../api/client";
@@ -28,33 +29,12 @@ function saveRecentJobs(jobs: RecentJob[]) {
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(jobs.slice(0, 10)));
   } catch {
-    // localStorage 不可用時忽略
-  }
-}
-
-function formatRemaining(seconds: number): string {
-  const min = Math.floor(seconds / 60);
-  const sec = Math.round(seconds % 60);
-  if (min <= 0) return `${sec} 秒`;
-  return `${min} 分 ${sec} 秒`;
-}
-
-function formatCreatedAt(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
-    if (diffMin < 1) return "剛剛";
-    if (diffMin < 60) return `${diffMin} 分鐘前`;
-    const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `${diffH} 小時前`;
-    return d.toLocaleDateString("zh-TW");
-  } catch {
-    return "";
+    // localStorage unavailable — ignore
   }
 }
 
 export default function Home() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -64,13 +44,41 @@ export default function Home() {
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>(loadRecentJobs);
   const navigateTimerRef = useRef<number | null>(null);
 
+  const formatRemaining = useCallback(
+    (seconds: number): string => {
+      const min = Math.floor(seconds / 60);
+      const sec = Math.round(seconds % 60);
+      if (min <= 0) return t("common.seconds", { count: sec });
+      return t("common.minSec", { min, sec });
+    },
+    [t],
+  );
+
+  const formatCreatedAt = useCallback(
+    (iso: string): string => {
+      try {
+        const d = new Date(iso);
+        const now = new Date();
+        const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
+        if (diffMin < 1) return t("common.justNow");
+        if (diffMin < 60) return t("common.minutesAgo", { count: diffMin });
+        const diffH = Math.floor(diffMin / 60);
+        if (diffH < 24) return t("common.hoursAgo", { count: diffH });
+        return d.toLocaleDateString(i18n.language);
+      } catch {
+        return "";
+      }
+    },
+    [t, i18n.language],
+  );
+
   useEffect(() => {
     getConfig()
       .then(setConfig)
-      .catch((e: unknown) => setConfigError(e instanceof Error ? e.message : "無法取得伺服器設定"));
-  }, []);
+      .catch((e: unknown) => setConfigError(e instanceof Error ? e.message : t("home.configError", { msg: "" })));
+  }, [t]);
 
-  // 監看中的作業：queued / processing 時每 2 秒輪詢
+  // watching job: poll every 2s while queued / processing
   const watching =
     activeJob !== null && (activeJob.status === "queued" || activeJob.status === "processing");
   const { data: polledJob, error: polledError } = usePolling(
@@ -79,7 +87,7 @@ export default function Home() {
     watching,
   );
 
-  // 輪詢失敗（如作業 410 過期或暫時斷線）→ 顯示訊息；下次成功自動清除
+  // polling failure (e.g. 410 expired or temporary disconnect) → show message; cleared on next success
   useEffect(() => {
     setPollError(polledError ? polledError.message : null);
   }, [polledError]);
@@ -92,7 +100,7 @@ export default function Home() {
     });
   }, []);
 
-  // 輪詢結果更新 activeJob；done 時導向編輯器
+  // poll result updates activeJob; navigate to the editor when done
   useEffect(() => {
     if (!polledJob) return;
     setActiveJob(polledJob);
@@ -125,7 +133,7 @@ export default function Home() {
       return next;
     });
     setActiveEta(res.eta_seconds);
-    // 立即以 queued 狀態顯示狀態卡（輪詢會接手更新）
+    // show the status card as queued immediately (polling takes over)
     setActiveJob({
       job_id: jobId,
       status: "queued",
@@ -145,7 +153,7 @@ export default function Home() {
         navigate(`/edit/${job.job_id}`);
         return;
       }
-      // 恢復輪詢：以最近一次已知狀態顯示，輪詢立即接手
+      // resume polling with the last known status; polling takes over immediately
       setPollError(null);
       setActiveEta(null);
       setActiveJob({
@@ -165,37 +173,42 @@ export default function Home() {
 
   const remaining = config?.session_remaining_seconds ?? null;
   const remainingLow = remaining !== null && remaining < 300;
+  const noLimits = !config || (config.max_upload_mb <= 0 && config.max_duration_min <= 0 && remaining === null);
 
   return (
     <>
       <section className="hero">
-        <div className="hero-badge">開源免費 · AI 自動字幕</div>
-        <h1>上傳影片，AI 自動產生字幕</h1>
-        <p className="hero-sub">
-          語音辨識、斷句、線上編輯、一鍵匯出 — 支援 SRT、VTT、ASS、FCPXML、燒錄 MP4 與透明背景 WebM。
-        </p>
+        <div className="hero-badge">{t("home.badge")}</div>
+        <h1>{t("home.title")}</h1>
+        <p className="hero-sub">{t("home.sub")}</p>
       </section>
 
-      {config && (
+      {config && !noLimits && (
         <div className="limits-banner">
-          <span className="limit-item">
-            <span className="dot" aria-hidden="true" />
-            單檔上限 <strong>{config.max_upload_mb} MB</strong>
-          </span>
-          <span className="limit-item">
-            <span className="dot" aria-hidden="true" />
-            最長 <strong>{config.max_duration_min} 分鐘</strong>
-          </span>
-          <span className={`limit-item${remainingLow ? " warn" : ""}`}>
-            <span className="dot" aria-hidden="true" />
-            今日剩餘上傳額度 <strong>{formatRemaining(remaining ?? 0)}</strong>
-          </span>
+          {config.max_upload_mb > 0 && (
+            <span className="limit-item">
+              <span className="dot" aria-hidden="true" />
+              {t("home.limitUpload", { mb: config.max_upload_mb })}
+            </span>
+          )}
+          {config.max_duration_min > 0 && (
+            <span className="limit-item">
+              <span className="dot" aria-hidden="true" />
+              {t("home.limitDuration", { min: config.max_duration_min })}
+            </span>
+          )}
+          {remaining !== null && (
+            <span className={`limit-item${remainingLow ? " warn" : ""}`}>
+              <span className="dot" aria-hidden="true" />
+              {t("home.limitRemaining", { time: formatRemaining(remaining) })}
+            </span>
+          )}
         </div>
       )}
 
       {configError && (
         <div className="error-box" role="alert" aria-live="assertive" style={{ maxWidth: 720, margin: "0 auto var(--space-8)" }}>
-          <span>無法取得伺服器設定：{configError}</span>
+          <span>{t("home.configError", { msg: configError })}</span>
         </div>
       )}
 
@@ -213,9 +226,9 @@ export default function Home() {
           />
           {pollError && (
             <div className="error-box" role="alert">
-              <span>狀態更新失敗：{pollError}（作業可能已過期，或請稍後重試）</span>
+              <span>{t("home.pollError", { msg: pollError })}</span>
               <button className="btn btn-sm btn-danger" onClick={() => setPollError(null)}>
-                關閉
+                {t("common.close")}
               </button>
             </div>
           )}
@@ -224,16 +237,16 @@ export default function Home() {
 
       {recentJobs.length > 0 && (
         <section className="recent-section">
-          <h2 className="recent-title">最近作業</h2>
+          <h2 className="recent-title">{t("home.recentTitle")}</h2>
           <div className="recent-list">
             {recentJobs.map((job) => (
               <button key={job.job_id} className="recent-item" onClick={() => handleRecentClick(job)}>
                 <span className={`status-chip ${job.status}`}>
                   <span className="status-dot" aria-hidden="true" />
-                  {job.status === "queued" && "排隊中"}
-                  {job.status === "processing" && "處理中"}
-                  {job.status === "done" && "完成"}
-                  {job.status === "failed" && "失敗"}
+                  {job.status === "queued" && t("home.queued")}
+                  {job.status === "processing" && t("home.processing")}
+                  {job.status === "done" && t("home.done")}
+                  {job.status === "failed" && t("home.failed")}
                 </span>
                 <span className="recent-name">{job.filename}</span>
                 <span className="recent-time">{formatCreatedAt(job.created_at)}</span>

@@ -45,6 +45,16 @@ RUN if [ "$INSTALL_GPU" = "1" ]; then \
 # 应用代码（入口模块 app.main:app；Celery 入口 app.worker.celery_app）
 COPY app/ ./app/
 
+# 打包免费字体（OFL 授權，见 backend/fonts/）：
+#   - backend/fonts/ 里的字体复制到 /usr/share/fonts（fontconfig 扫描）与 /app/fonts（API 下载）
+#   - fonts-noto-cjk 已安装的 Noto 思源黑体/宋体 .ttc 软链到 /app/fonts 供下载
+COPY fonts/ ./fonts/
+RUN mkdir -p /usr/share/fonts/truetype/sfc \
+    && cp -a fonts/. /usr/share/fonts/truetype/sfc/ \
+    && ln -sf /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /app/fonts/NotoSansCJK-Regular.ttc \
+    && ln -sf /usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc /app/fonts/NotoSerifCJK-Regular.ttc \
+    && fc-cache -f
+
 # 非 root 运行（安全加固）；预创建数据目录并归属 appuser，
 # 使空卷挂载到 /data 时继承正确属主
 RUN useradd --create-home --uid 10001 appuser \

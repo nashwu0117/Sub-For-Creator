@@ -69,6 +69,82 @@ def _queue_position(db: Session, job: Job) -> int:
     )
 
 
+def _finalize_upload(
+    tmp_path: str,
+    filename: str,
+    token: str,
+    language: str | None,
+    options: str | None,
+    db: Session,
+    settings: Settings,
+) -> JSONResponse:
+    """Probe → quota → store → enqueue → respond. Shared by direct and chunked uploads."""
+    # lazy import: core helpers live in app.core (probe raises 400 on bad media)
+    from app.core import probe_duration, probe_media
+
+    probe_media(tmp_path)  # UnsupportedFormatError/MediaProcessingError -> 400
+    duration = probe_duration(tmp_path)
+    if settings.max_duration_min > 0 and duration > settings.max_duration_min * 60:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"media duration {duration:.1f}s exceeds maximum of "
+                f"{settings.max_duration_min} minutes"
+            ),
+        )
+
+    lang = _resolve_language(language)
+    opts = _parse_options(options)
+    model_size = opts.model_size or settings.whisper_model
+
+    check_daily_quota(db, token, duration)
+    check_queue_capacity(db)
+
+    ext = os.path.splitext(filename)[1].lower() or ".bin"
+    job_id = uuid.uuid4().hex
+    storage = get_storage()
+    storage.save(tmp_path, source_key(job_id, ext))
+
+    job = Job(
+        id=job_id,
+        session_token=token,
+        status=JobStatus.QUEUED.value,
+        filename=filename,
+        language=lang,
+        model_size=model_size,
+        duration=duration,
+    )
+    db.add(job)
+    db.flush()
+    position = _queue_position(db, job)
+    db.commit()
+
+    try:
+        get_queue().enqueue(job_id)
+    except Exception as exc:
+        log.exception("failed to enqueue job %s", job_id)
+        job.status = JobStatus.FAILED.value
+        job.error = f"enqueue failed: {exc}"[:500]
+        db.commit()
+    else:
+        record_usage(db, token, duration)
+        db.commit()
+
+    # inline queue may already be processing/done — reflect the actual status
+    db.expire_all()
+    job = db.get(Job, job_id)
+    active = job.status in ACTIVE_STATUSES
+    return JSONResponse(
+        status_code=202,
+        content={
+            "job_id": job.id,
+            "status": job.status,
+            "queue_position": position if active else None,
+            "eta_seconds": position * 60 if active else 0,
+        },
+    )
+
+
 @router.post("/jobs")
 def create_job(
     file: UploadFile = File(...),
@@ -89,7 +165,7 @@ def create_job(
             size = 0
             while chunk := file.file.read(1024 * 1024):
                 size += len(chunk)
-                if size > max_bytes:
+                if max_bytes > 0 and size > max_bytes:
                     raise HTTPException(
                         status_code=413,
                         detail=(
@@ -101,68 +177,8 @@ def create_job(
             if size == 0:
                 raise HTTPException(status_code=422, detail="empty file")
 
-            # lazy import: core helpers live in app.core (probe raises 400 on bad media)
-            from app.core import probe_duration, probe_media
-
-            probe_media(tmp.name)  # UnsupportedFormatError/MediaProcessingError -> 400
-            duration = probe_duration(tmp.name)
-            if duration > settings.max_duration_min * 60:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"media duration {duration:.1f}s exceeds maximum of "
-                        f"{settings.max_duration_min} minutes"
-                    ),
-                )
-
-            lang = _resolve_language(language)
-            opts = _parse_options(options)
-            model_size = opts.model_size or settings.whisper_model
-
-            check_daily_quota(db, token, duration)
-            check_queue_capacity(db)
-
-            job_id = uuid.uuid4().hex
-            storage = get_storage()
-            storage.save(tmp.name, source_key(job_id, ext))
-
-            job = Job(
-                id=job_id,
-                session_token=token,
-                status=JobStatus.QUEUED.value,
-                filename=filename,
-                language=lang,
-                model_size=model_size,
-                duration=duration,
-            )
-            db.add(job)
-            db.flush()
-            position = _queue_position(db, job)
-            db.commit()
-
-            try:
-                get_queue().enqueue(job_id)
-            except Exception as exc:
-                log.exception("failed to enqueue job %s", job_id)
-                job.status = JobStatus.FAILED.value
-                job.error = f"enqueue failed: {exc}"[:500]
-                db.commit()
-            else:
-                record_usage(db, token, duration)
-                db.commit()
-
-            # inline queue may already be processing/done — reflect the actual status
-            db.expire_all()
-            job = db.get(Job, job_id)
-            active = job.status in ACTIVE_STATUSES
-            return JSONResponse(
-                status_code=202,
-                content={
-                    "job_id": job.id,
-                    "status": job.status,
-                    "queue_position": position if active else None,
-                    "eta_seconds": position * 60 if active else 0,
-                },
+            return _finalize_upload(
+                tmp.name, filename, token, language, options, db, settings
             )
         finally:
             os.unlink(tmp.name)

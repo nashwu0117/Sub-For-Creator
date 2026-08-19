@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
@@ -33,6 +34,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
   { audioUrl, segments, currentTime, onTimeChange, onSeek, onSegmentsChange },
   ref,
 ) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
   const regionsPluginRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
@@ -216,19 +218,19 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
   if (hidden) {
     return (
       <div className="waveform-card">
-        <div className="card-title">時間軸</div>
-        <div className="waveform-empty">無法載入音軌，時間軸已隱藏（仍可正常編輯字幕）。</div>
+        <div className="card-title">{t("waveform.title")}</div>
+        <div className="waveform-empty">{t("waveform.hidden")}</div>
       </div>
     );
   }
 
   return (
     <div className="waveform-card">
-      <div className="card-title">時間軸 — 拖曳片段邊緣可調整時間</div>
+      <div className="card-title">{t("waveform.hint")}</div>
       {audioUrl ? (
         <div className="waveform-container" ref={containerRef} />
       ) : (
-        <div className="waveform-empty">正在載入音軌…</div>
+        <div className="waveform-empty">{t("waveform.loading")}</div>
       )}
     </div>
   );

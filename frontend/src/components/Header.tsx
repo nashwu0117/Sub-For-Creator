@@ -1,4 +1,7 @@
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, NavLink } from "react-router-dom";
+import { applyLocale, LOCALES, type Locale } from "../i18n";
 
 function LogoMark() {
   return (
@@ -10,6 +13,13 @@ function LogoMark() {
 }
 
 export default function Header() {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language as Locale;
+
+  useEffect(() => {
+    document.title = `Sub for Creator — ${t("common.pageTitle")}`;
+  }, [t]);
+
   return (
     <header className="site-header">
       <div className="site-header-inner">
@@ -19,18 +29,35 @@ export default function Header() {
           </span>
           Sub for Creator
         </Link>
-        <nav className="site-nav" aria-label="主要導覽">
+        <nav className="site-nav" aria-label={t("header.navAria")}>
           <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : undefined)}>
-            首頁
+            {t("header.home")}
           </NavLink>
           <NavLink to="/privacy" className={({ isActive }) => (isActive ? "active" : undefined)}>
-            隱私權
+            {t("header.privacy")}
           </NavLink>
           <NavLink to="/terms" className={({ isActive }) => (isActive ? "active" : undefined)}>
-            服務條款
+            {t("header.terms")}
           </NavLink>
         </nav>
         <span className="header-spacer" />
+        <label className="lang-switcher">
+          <span className="lang-switcher-label" aria-hidden="true">
+            {t("header.language")}
+          </span>
+          <select
+            className="lang-switcher-select"
+            value={locale}
+            aria-label={t("header.language")}
+            onChange={(e) => applyLocale(e.target.value as Locale)}
+          >
+            {LOCALES.map((code) => (
+              <option key={code} value={code}>
+                {t(`language.${code}`)}
+              </option>
+            ))}
+          </select>
+        </label>
         <a
           className="github-link"
           href="https://github.com/nashwu0117/Sub-For-Creator"

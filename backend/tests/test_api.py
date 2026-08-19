@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import timedelta
@@ -192,21 +193,106 @@ def test_export_mp4_and_webm_alpha(client, tmp_path):
     assert resp.status_code == 202
     job_id = resp.json()["job_id"]
     wait_done(client, job_id, token=TOKEN)
+    headers = {"X-Session-Token": TOKEN}
 
-    resp = client.get(f"/api/jobs/{job_id}/export/mp4", headers={"X-Session-Token": TOKEN})
+    # not rendered yet -> 409 on download, then start the async render
+    resp = client.get(f"/api/jobs/{job_id}/export/mp4", headers=headers)
+    assert resp.status_code == 409
+
+    resp = client.post(f"/api/jobs/{job_id}/export/mp4/render", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("rendering", "ready")
+
+    # polling the same render must not restart it
+    resp = client.post(f"/api/jobs/{job_id}/export/mp4/render", headers=headers)
+    assert resp.json()["status"] in ("rendering", "ready")
+
+    for _ in range(300):
+        status = client.get(f"/api/jobs/{job_id}/export/mp4/status", headers=headers).json()
+        assert status["status"] != "failed", status.get("error")
+        if status["status"] == "ready":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("mp4 render did not finish in time")
+
+    resp = client.get(f"/api/jobs/{job_id}/export/mp4", headers=headers)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "video/mp4"
     assert b"ftyp" in resp.content[:16]
 
     # second request serves the cached render
-    resp = client.get(f"/api/jobs/{job_id}/export/mp4", headers={"X-Session-Token": TOKEN})
+    resp = client.get(f"/api/jobs/{job_id}/export/mp4", headers=headers)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "video/mp4"
 
-    resp = client.get(f"/api/jobs/{job_id}/export/webm_alpha", headers={"X-Session-Token": TOKEN})
+    resp = client.post(f"/api/jobs/{job_id}/export/webm_alpha/render", headers=headers)
+    assert resp.status_code == 200
+    for _ in range(300):
+        status = client.get(f"/api/jobs/{job_id}/export/webm_alpha/status", headers=headers).json()
+        assert status["status"] != "failed", status.get("error")
+        if status["status"] == "ready":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("webm_alpha render did not finish in time")
+
+    resp = client.get(f"/api/jobs/{job_id}/export/webm_alpha", headers=headers)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "video/webm"
     assert resp.content[:4] == b"\x1aE\xdf\xa3"
+
+
+def test_export_render_requires_done_job(client, tmp_path):
+    job_id = _seed_job(status="processing")
+    resp = client.post(f"/api/jobs/{job_id}/export/mp4/render", headers={"X-Session-Token": TOKEN})
+    assert resp.status_code == 409
+    resp = client.get(f"/api/jobs/{job_id}/export/mp4/status", headers={"X-Session-Token": TOKEN})
+    assert resp.status_code == 409
+
+
+def test_fonts_system_list_and_download(client):
+    headers = {"X-Session-Token": TOKEN}
+    resp = client.get("/api/fonts", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "system_fonts" in body
+    lxgw = next((f for f in body["system_fonts"] if f["family"] == "LXGW WenKai"), None)
+    assert lxgw is not None
+    assert lxgw["available"] is True
+    assert lxgw["size"] > 0
+    assert lxgw["license"]
+
+    resp = client.get("/api/fonts/system/LXGWWenKai-Regular.ttf", headers=headers)
+    assert resp.status_code == 200
+    assert "attachment" in resp.headers["content-disposition"]
+
+    assert client.get("/api/fonts/system/nope.ttf", headers=headers).status_code == 404
+    # path traversal is neutralized by URL normalization (route never matches)
+    traversal = "/api/fonts/system/..%2F..%2Fetc%2Fpasswd"
+    assert client.get(traversal, headers=headers).status_code == 404
+
+
+def test_font_upload_download(client, tmp_path):
+    headers = {"X-Session-Token": TOKEN}
+    fake_font = tmp_path / "MyFont.ttf"
+    fake_font.write_bytes(b"fakettfdata")
+    with open(fake_font, "rb") as fh:
+        resp = client.post(
+            "/api/fonts",
+            files={"file": ("MyFont.ttf", fh, "application/octet-stream")},
+            headers=headers,
+        )
+    assert resp.status_code == 201
+    name = resp.json()["filename"]
+
+    resp = client.get(f"/api/fonts/{name}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.content == b"fakettfdata"
+    assert "attachment" in resp.headers["content-disposition"]
+
+    assert client.get("/api/fonts/../MyFont.ttf", headers=headers).status_code == 404
+    assert client.get("/api/fonts/not-there.ttf", headers=headers).status_code == 404
 
 
 def test_export_ass_param_validation(client, tmp_path):
@@ -276,8 +362,10 @@ def test_daily_quota_429(client, tmp_path, override_settings):
     assert body["detail"]
 
 
-def test_queue_full_429(client, tmp_path, override_settings):
-    override_settings(max_queue=0)
+def test_queue_full_429(client, tmp_path, override_settings, monkeypatch):
+    override_settings(max_queue=1)
+    # pin queue_length so the test is deterministic (inline queue may drain fast)
+    monkeypatch.setattr("app.api.limits.queue_length", lambda db: 1)
     wav = make_wav(tmp_path / "qf.wav")
     resp = upload(client, wav, token=TOKEN)
     assert resp.status_code == 429
@@ -293,6 +381,81 @@ def test_upload_rate_limit_429(client, tmp_path, override_settings):
     assert resp.status_code == 429
     body = resp.json()
     assert body["retry_after_seconds"] >= 1
+
+
+def test_chunked_upload_flow(client, tmp_path):
+    """start -> chunks -> complete must produce a normal job that reaches done."""
+    with open(make_wav(tmp_path / "chunked.wav", seconds=0.5), "rb") as fh:
+        data = fh.read()
+    headers = {"X-Session-Token": "chunk-tok"}
+
+    resp = client.post(
+        "/api/jobs/uploads",
+        headers=headers,
+        data={"filename": "chunked.wav", "language": "en"},
+    )
+    assert resp.status_code == 200
+    upload_id = resp.json()["upload_id"]
+
+    half = len(data) // 2
+    for index, part in ((0, data[:half]), (1, data[half:])):
+        resp = client.post(
+            f"/api/jobs/uploads/{upload_id}/chunks",
+            headers=headers,
+            data={"index": str(index)},
+            files={"data": ("part.bin", part, "application/octet-stream")},
+        )
+        assert resp.status_code == 200
+
+    resp = client.post(f"/api/jobs/uploads/{upload_id}/complete", headers=headers)
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["job_id"]
+    wait_done(client, body["job_id"], "chunk-tok")
+
+
+def test_chunked_upload_requires_owner(client, tmp_path):
+    headers = {"X-Session-Token": "owner-tok"}
+    resp = client.post(
+        "/api/jobs/uploads", headers=headers, data={"filename": "owner.wav"}
+    )
+    upload_id = resp.json()["upload_id"]
+
+    foreign = {"X-Session-Token": "other-tok"}
+    resp = client.post(
+        f"/api/jobs/uploads/{upload_id}/chunks",
+        headers=foreign,
+        data={"index": "0"},
+        files={"data": ("p.bin", b"x", "application/octet-stream")},
+    )
+    assert resp.status_code == 403
+
+    resp = client.post(f"/api/jobs/uploads/{upload_id}/complete", headers=foreign)
+    assert resp.status_code == 403
+
+    resp = client.post(f"/api/jobs/uploads/{upload_id}/complete", headers=headers)
+    assert resp.status_code == 422  # no chunks uploaded yet
+
+
+def test_chunked_upload_unlimited_size(client, tmp_path, override_settings):
+    """With max_upload_mb=0 (default) a chunked file larger than the old cap lands."""
+    override_settings(max_upload_mb=0)
+    with open(make_wav(tmp_path / "big.wav", seconds=0.5), "rb") as fh:
+        data = fh.read()
+    headers = {"X-Session-Token": "big-tok"}
+    resp = client.post(
+        "/api/jobs/uploads", headers=headers, data={"filename": "big.wav"}
+    )
+    upload_id = resp.json()["upload_id"]
+    resp = client.post(
+        f"/api/jobs/uploads/{upload_id}/chunks",
+        headers=headers,
+        data={"index": "0"},
+        files={"data": ("p.bin", data, "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+    resp = client.post(f"/api/jobs/uploads/{upload_id}/complete", headers=headers)
+    assert resp.status_code == 202
 
 
 def test_unsupported_format_400(client, tmp_path):

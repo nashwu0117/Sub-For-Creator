@@ -21,8 +21,11 @@
 
 - **AI 語音辨識 + 智慧斷句**：以 WhisperX 進行逐字對齊，再依標點、停頓與行長規則自動切成適合閱讀的字幕行。
 - **網頁字幕編輯器**：播放器、字幕列表與 wavesurfer 時間軸同步，逐字拖曳調整時間點。
-- **多格式匯出**：SRT、VTT、TXT、ASS、FCPXML，以及燒錄進畫面的 MP4 與透明背景的 WebM（VP9 alpha）。
+- **多格式匯出**：SRT、VTT、TXT、ASS、FCPXML，以及燒錄進畫面的 MP4 與透明背景的 WebM（VP9 alpha）。轉檔採背景渲染 + 進度輪詢，長片/4K 也不會逾時。
 - **逐字高亮 karaoke**：ASS 匯出支援逐字變色，適合卡拉 OK 或歌詞影片。
+- **內建免費字體**：Noto 思源黑體/宋體、霞鶩文楷（LXGW WenKai）、站酷快樂體/小薇體（全部 SIL OFL 授權），編輯器直接選用、免上傳，也可下載字型檔；另支援上傳自訂 .ttf/.otf。
+- **多語言介面**：繁體中文、简体中文、English 即時切換（右上角選單，自動記憶）。
+- **大檔分片上傳**：超過 8 MB 自動分片，繞過網關/代理（如 GitHub Codespaces）的單請求大小上限。
 - **匿名使用，免註冊**：瀏覽器自動產生 session token，不收集任何個人資料。
 - **排隊機制**：上傳後進入 Redis 佇列，頁面即時顯示排隊位置與預估等待時間。
 - **檔案自動清理**：處理完成後保留 48 小時，到期自動永久刪除。
@@ -134,19 +137,19 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 
 ## 使用限制與額度
 
-免費服務設有額度限制，全部可透過 `SFC_` 環境變數調整：
+預設**不設任何限制**（0 = 不限制），全部可透過 `SFC_` 環境變數調整：
 
 | 限制 | 預設值 | 環境變數 |
 |---|---|---|
-| 單檔大小 | 1024 MB | `SFC_MAX_UPLOAD_MB` |
-| 單檔時長 | 60 分鐘 | `SFC_MAX_DURATION_MIN` |
-| 每 session 每日上傳秒數 | 3600 秒 | `SFC_DAILY_SECONDS_PER_SESSION` |
-| 最大佇列長度 | 50 | `SFC_MAX_QUEUE` |
+| 單檔大小 | 0（不限制） | `SFC_MAX_UPLOAD_MB` |
+| 單檔時長 | 0（不限制） | `SFC_MAX_DURATION_MIN` |
+| 每 session 每日上傳秒數 | 0（不限制） | `SFC_DAILY_SECONDS_PER_SESSION` |
+| 最大佇列長度 | 0（不限制） | `SFC_MAX_QUEUE` |
 | 同時處理任務數 | 2 | `SFC_MAX_CONCURRENT` |
 | 檔案保留時間 | 48 小時 | `SFC_TTL_HOURS` |
-| 上傳頻率 | 60 秒內最多 5 次 | `SFC_UPLOAD_RATE_LIMIT` |
+| 上傳頻率 | 0（不限制） | `SFC_UPLOAD_RATE_LIMIT` |
 
-超過額度時 API 回傳 `429`，並附 `retry_after_seconds` 提示等待時間。
+設為 0 即關閉該項限制；超過額度時 API 回傳 `429`，並附 `retry_after_seconds` 提示等待時間。
 
 ## 隱私與條款
 
@@ -162,15 +165,22 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 |---|---|---|
 | GET | `/api/health` | 健康檢查 |
 | GET | `/api/config` | 上傳限制與支援語言 |
-| POST | `/api/jobs` | 上傳影片/音檔，建立作業 |
+| POST | `/api/jobs` | 上傳影片/音檔，建立作業（>8 MB 自動分片） |
+| POST | `/api/jobs/uploads` | 開啟分片上傳 session |
+| POST | `/api/jobs/uploads/{id}/chunks` | 上傳單一分片 |
+| POST | `/api/jobs/uploads/{id}/complete` | 合併分片並建立作業 |
 | GET | `/api/jobs/{job_id}` | 查詢作業狀態與進度 |
 | GET | `/api/jobs/{job_id}/subtitles` | 取得字幕資料（含逐字時間戳） |
 | PUT | `/api/jobs/{job_id}/subtitles` | 儲存編輯後的字幕 |
 | GET | `/api/jobs/{job_id}/media` | 串流原始影片/音檔（播放器用） |
 | GET | `/api/jobs/{job_id}/audio` | 串流抽取的 16kHz 音軌 |
 | GET | `/api/jobs/{job_id}/export/{format}` | 匯出 `srt` / `vtt` / `txt` / `ass` / `fcpxml` / `mp4` / `webm_alpha` |
-| GET | `/api/fonts` | 列出已上傳的自訂字型 |
+| POST | `/api/jobs/{job_id}/export/{format}/render` | 開始背景渲染 MP4 / WebM（回傳 `rendering` / `ready`） |
+| GET | `/api/jobs/{job_id}/export/{format}/status` | 輪詢渲染進度（`idle` / `rendering` / `ready` / `failed`） |
+| GET | `/api/fonts` | 列出內建免費字體與已上傳的自訂字型 |
 | POST | `/api/fonts` | 上傳自訂字型（.ttf / .otf，燒錄用） |
+| GET | `/api/fonts/system/{filename}` | 下載內建免費字型檔 |
+| GET | `/api/fonts/{filename}` | 下載已上傳的字型檔 |
 
 所有請求以 `X-Session-Token` header 識別匿名 session。完整契約見 [docs/API.md](docs/API.md)。
 
@@ -180,17 +190,19 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 ├── backend/
 │   ├── app/
 │   │   ├── api/          # FastAPI 路由
-│   │   ├── core/         # 音訊抽取、ASR 後端、斷句、領域模型
+│   │   ├── core/         # 音訊抽取、ASR 後端、斷句、領域模型、內建字體清單
 │   │   ├── exporters/    # SRT / VTT / TXT / ASS / FCPXML 匯出器
 │   │   ├── models/       # 資料庫模型
 │   │   ├── storage/      # 本機 / S3 儲存
 │   │   └── worker/       # Celery 任務與清理排程
+│   ├── fonts/                # 內建免費字體（OFL 授權，隨映像發佈）
 │   ├── requirements.txt      # CPU 依賴（faster-whisper）
 │   ├── requirements-gpu.txt  # GPU 依賴（whisperx + torch）
 │   └── tests/
 ├── cli/
 │   └── subforcreator.py  # 單機 CLI
 ├── frontend/             # React + Vite + TypeScript
+│   └── src/i18n/         # 多語言資源（zh-TW / zh-CN / en）
 ├── docs/
 │   ├── API.md            # API 契約
 │   ├── PRIVACY.md        # 隱私權政策
@@ -206,14 +218,16 @@ v1 已完成：
 
 - WhisperX 逐字對齊與規則斷句
 - 網頁字幕編輯器（播放器 + 時間軸 + 逐字高亮）
-- 多格式匯出（含 MP4 燒錄與透明背景）
-- 匿名 session、排隊與額度限制
+- 多格式匯出（含 MP4 燒錄與透明背景，背景渲染不逾時）
+- 匿名 session、排隊與可調額度（預設不限制）
+- 大檔分片上傳（繞過代理單請求上限）
+- 多語言介面（繁中 / 簡中 / English）
+- 內建免費 OFL 字體（可選用、可下載）+ 自訂字型上傳
 - 48 小時自動清理
 
 接下來規劃：
 
 - 帳號系統與作品收藏
-- 字幕樣式收藏與套用
 - 剪映（CapCut）草稿匯出
 - 多 GPU 橫向擴展
 

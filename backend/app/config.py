@@ -49,17 +49,22 @@ class Settings(BaseSettings):
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
 
-    # --- limits (see docs/API.md limits table) ---
-    max_upload_mb: float = 1024
-    max_duration_min: float = 60
-    daily_seconds_per_session: int = 3600
-    max_queue: int = 50
+    # --- limits (0 = unlimited) ---
+    #: 0 = no upload size cap
+    max_upload_mb: float = 0
+    #: 0 = no media duration cap
+    max_duration_min: float = 0
+    #: 0 = no daily per-session cap
+    daily_seconds_per_session: int = 0
+    #: 0 = no queue length cap
+    max_queue: int = 0
     #: worker-side concurrency only; the API enforces queue length via max_queue
     max_concurrent: int = 2
     ttl_hours: float = 48
-    upload_rate_limit: int = 5  # uploads per 60s sliding window per session token
-    #: per-font upload cap for custom fonts (see docs/API.md limits table)
-    max_font_mb: int = 20
+    #: uploads per 60s sliding window per session token; 0 = no cap
+    upload_rate_limit: int = 0
+    #: per-font upload cap for custom fonts; 0 = no cap
+    max_font_mb: int = 0
 
     # --- queue ---
     queue_backend: str = "celery"  # "celery" | "inline"
@@ -68,7 +73,7 @@ class Settings(BaseSettings):
     # --- transcription / rendering ---
     whisper_model: str = "large-v3"
     max_line_chars: int = 16
-    render_timeout_seconds: int = 300
+    render_timeout_seconds: int = 3600
 
     # --- misc ---
     #: env accepts comma-separated list or JSON array (see _split_cors_origins)

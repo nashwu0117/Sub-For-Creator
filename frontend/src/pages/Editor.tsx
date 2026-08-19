@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
@@ -25,6 +26,7 @@ const DEFAULT_STYLE: EditorStyle = {
 type ToastKind = "ok" | "error";
 
 export default function Editor() {
+  const { t } = useTranslation();
   const { jobId } = useParams<{ jobId: string }>();
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -35,13 +37,13 @@ export default function Editor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
-  /** 輪詢期間的暫時性錯誤（如網路抖動），不中斷編輯器 */
+  /** transient polling errors (e.g. network hiccup); do not break the editor */
   const [pollNote, setPollNote] = useState<string | null>(null);
   const playerRef = useRef<PlayerHandle>(null);
   const waveformRef = useRef<WaveformHandle>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  // 作業完成後才以帶 session token 的 fetch 下載媒體（<video>/wavesurfer 無法自訂 header）
+  // download media with the session token only once the job is done (<video>/wavesurfer can't set headers)
   const media = useAuthedMedia(job && job.status === "done" && jobId ? getMediaUrl(jobId) : null);
   const audio = useAuthedMedia(job && job.status === "done" && jobId ? getAudioUrl(jobId) : null);
 
@@ -58,7 +60,7 @@ export default function Editor() {
     setSegmentsReady(true);
   }, [jobId]);
 
-  // 載入作業；done 時直接載入字幕
+  // load the job; load subtitles immediately when done
   useEffect(() => {
     if (!jobId) return;
     let cancelled = false;
@@ -68,19 +70,19 @@ export default function Editor() {
         setJob(j);
         if (j.status === "done") {
           loadSubtitles().catch((e: unknown) => {
-            if (!cancelled) setLoadError(e instanceof Error ? e.message : "無法載入字幕資料");
+            if (!cancelled) setLoadError(e instanceof Error ? e.message : t("editor.loadSubtitlesFail"));
           });
         }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : "無法載入作業");
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : t("editor.loadJobFail"));
       });
     return () => {
       cancelled = true;
     };
-  }, [jobId, loadSubtitles]);
+  }, [jobId, loadSubtitles, t]);
 
-  // 作業尚未完成 → 每 2 秒輪詢
+  // job not finished yet → poll every 2s
   const needsPolling =
     job !== null && (job.status === "queued" || job.status === "processing") && !segmentsReady;
   const { data: polledJob, error: pollError } = usePolling(
@@ -94,14 +96,14 @@ export default function Editor() {
     setJob(polledJob);
     if (polledJob.status === "done") {
       loadSubtitles().catch((e: unknown) =>
-        setLoadError(e instanceof Error ? e.message : "無法載入字幕資料"),
+        setLoadError(e instanceof Error ? e.message : t("editor.loadSubtitlesFail")),
       );
     } else if (polledJob.status === "failed") {
-      setLoadError(polledJob.error ?? "處理失敗，請稍後再試");
+      setLoadError(polledJob.error ?? t("editor.processFailed"));
     }
-  }, [polledJob, loadSubtitles]);
+  }, [polledJob, loadSubtitles, t]);
 
-  // 輪詢失敗僅提示（作業可能仍在處理）；下一次成功即清除
+  // polling failure is only a hint (the job may still be running); cleared on next success
   useEffect(() => {
     setPollNote(pollError ? pollError.message : null);
   }, [pollError]);
@@ -134,7 +136,7 @@ export default function Editor() {
     if (!jobId || saving) return;
     setSaving(true);
     try {
-      // 依順序重新編號 id
+      // renumber ids in order
       const clean = segments.map((s, i) => ({
         id: i,
         start: s.start,
@@ -145,13 +147,13 @@ export default function Editor() {
       await putSubtitles(jobId, clean);
       setSegments(clean);
       setDirty(false);
-      showToast("已儲存");
+      showToast(t("editor.saved"));
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "儲存失敗，請稍後再試", "error");
+      showToast(e instanceof Error ? e.message : t("editor.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
-  }, [jobId, segments, saving, showToast]);
+  }, [jobId, segments, saving, showToast, t]);
 
   const activeSegmentId = useMemo(() => {
     const s = segments.find(
@@ -163,24 +165,24 @@ export default function Editor() {
   if (!jobId) {
     return (
       <div className="editor-state">
-        <div className="editor-state-title">缺少作業編號</div>
+        <div className="editor-state-title">{t("editor.missingJob")}</div>
         <Link to="/" className="btn btn-primary">
-          回到首頁
+          {t("common.backHome")}
         </Link>
       </div>
     );
   }
 
-  // 載入失敗 / 作業失敗
+  // load failure / job failure
   if (loadError || (job && job.status === "failed")) {
     return (
       <div className="editor-state">
-        <div className="editor-state-title">無法開啟此作業</div>
+        <div className="editor-state-title">{t("editor.cannotOpen")}</div>
         <p className="editor-state-sub">
-          {loadError ?? job?.error ?? "作業已過期或不存在（作業保留 48 小時）。"}
+          {loadError ?? job?.error ?? t("editor.expired")}
         </p>
         <Link to="/" className="btn btn-primary">
-          回到首頁
+          {t("common.backHome")}
         </Link>
       </div>
     );
@@ -188,7 +190,7 @@ export default function Editor() {
 
   const jobDone = job?.status === "done";
 
-  // 尚未載入完成
+  // not fully loaded yet
   if (!job || !jobDone || !segmentsReady) {
     return (
       <div className="editor-state">
@@ -197,35 +199,35 @@ export default function Editor() {
             <JobStatusCard job={job} />
             {pollNote && (
               <div className="error-box" role="alert">
-                <span>狀態更新暫時失敗：{pollNote}</span>
+                <span>{t("editor.pollNote", { msg: pollNote })}</span>
               </div>
             )}
-            <p className="editor-state-sub">字幕產生完成後將自動載入編輯器…</p>
+            <p className="editor-state-sub">{t("editor.loadingSubs")}</p>
           </>
         ) : (
           <>
             <span className="spinner spinner-dark" aria-hidden="true" />
-            <div className="editor-state-title">載入作業中…</div>
+            <div className="editor-state-title">{t("editor.loadingJob")}</div>
           </>
         )}
       </div>
     );
   }
 
-  const filename = job.meta.filename ?? "未命名";
+  const filename = job.meta.filename ?? t("editor.unnamed");
 
   return (
     <>
       <div className="editor-header">
         <Link to="/" className="back-link">
-          ← 回到首頁
+          {t("editor.backLink")}
         </Link>
         <h1>{filename}</h1>
         <span className={`status-chip done`}>
           <span className="status-dot" aria-hidden="true" />
-          處理完成
+          {t("editor.done")}
         </span>
-        {dirty && <span className="dirty-badge">未儲存</span>}
+        {dirty && <span className="dirty-badge">{t("common.unsaved")}</span>}
       </div>
 
       <div className="editor-grid">

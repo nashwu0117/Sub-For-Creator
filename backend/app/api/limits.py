@@ -30,6 +30,8 @@ def _quota_error(message: str, retry_after_seconds: int) -> QuotaExceededError:
 def check_upload_rate(token: str) -> None:
     """Sliding-window upload frequency limit (``SFC_UPLOAD_RATE_LIMIT`` per 60s)."""
     settings = get_settings()
+    if settings.upload_rate_limit <= 0:
+        return
     now = time.monotonic()
     with _uploads_lock:
         window = _uploads[token]
@@ -65,6 +67,8 @@ def get_usage_seconds(db: Session, token: str) -> float:
 def check_daily_quota(db: Session, token: str, duration: float) -> None:
     """Reject when today's usage plus ``duration`` exceeds the daily cap."""
     settings = get_settings()
+    if settings.daily_seconds_per_session <= 0:
+        return
     used = get_usage_seconds(db, token)
     if used + duration > settings.daily_seconds_per_session:
         raise _quota_error(
@@ -92,5 +96,7 @@ def queue_length(db: Session) -> int:
 def check_queue_capacity(db: Session) -> None:
     """Reject when the active queue already holds ``SFC_MAX_QUEUE`` jobs."""
     settings = get_settings()
+    if settings.max_queue <= 0:
+        return
     if queue_length(db) >= settings.max_queue:
         raise _quota_error("queue is full; try again later", 60)

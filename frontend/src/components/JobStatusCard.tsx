@@ -1,27 +1,28 @@
+import { useTranslation } from "react-i18next";
 import type { Job, JobStage } from "../types";
 
 interface Props {
   job: Job;
-  /** 建立作業時的回傳預估等待秒數（僅 queued 時顯示） */
+  /** estimated wait seconds from the job-creation response (queued only) */
   etaSeconds?: number | null;
   onRetry?: () => void;
 }
 
 const STAGE_LABELS: Record<Exclude<JobStage, null>, string> = {
-  extracting: "音軌處理",
-  transcribing: "語音辨識",
-  segmenting: "斷句",
+  extracting: "extracting",
+  transcribing: "transcribing",
+  segmenting: "segmenting",
 };
 
-function formatEta(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} 秒`;
-  const min = Math.round(seconds / 60);
-  return `約 ${min} 分鐘`;
-}
-
 export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
+  const { t } = useTranslation();
   const { status, stage, progress, queue_position, error, meta } = job;
   const filename = meta.filename ?? job.job_id;
+
+  const formatEta = (seconds: number): string => {
+    if (seconds < 60) return t("common.seconds", { count: Math.max(1, Math.round(seconds)) });
+    return t("jobStatus.etaMinutes", { count: Math.round(seconds / 60) });
+  };
 
   return (
     <div
@@ -33,16 +34,16 @@ export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
       <div className="job-card-header">
         <span className={`status-chip ${status}`}>
           <span className="status-dot" aria-hidden="true" />
-          {status === "queued" && "排隊中"}
-          {status === "processing" && "處理中"}
-          {status === "done" && "處理完成"}
-          {status === "failed" && "處理失敗"}
+          {status === "queued" && t("jobStatus.queued")}
+          {status === "processing" && t("jobStatus.processing")}
+          {status === "done" && t("jobStatus.done")}
+          {status === "failed" && t("jobStatus.failed")}
         </span>
         <div style={{ minWidth: 0 }}>
           <div className="job-card-filename">{filename}</div>
           <div className="job-card-meta">
-            {meta.language ? `語言：${meta.language} · ` : ""}
-            {meta.model_size ? `模型：${meta.model_size}` : ""}
+            {meta.language ? `${t("jobStatus.lang", { lang: meta.language })} · ` : ""}
+            {meta.model_size ? t("jobStatus.model", { model: meta.model_size }) : ""}
           </div>
         </div>
       </div>
@@ -51,17 +52,19 @@ export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
         {status === "queued" && (
           <div className="job-stage-label">
             {queue_position !== null && queue_position > 0
-              ? `目前排隊第 ${queue_position} 位`
-              : "等待處理中…"}
+              ? t("jobStatus.queuePosition", { pos: queue_position })
+              : t("jobStatus.waiting")}
             {etaSeconds !== null && etaSeconds !== undefined && etaSeconds > 0 && (
-              <span className="job-stage-sub">（預估等待 {formatEta(etaSeconds)}）</span>
+              <span className="job-stage-sub">
+                {t("jobStatus.etaSuffix", { eta: formatEta(etaSeconds) })}
+              </span>
             )}
           </div>
         )}
 
         {status === "processing" && (
           <>
-            <div className="job-stage-label">{stage ? STAGE_LABELS[stage] : "處理中"}</div>
+            <div className="job-stage-label">{stage ? t(`jobStatus.${STAGE_LABELS[stage]}`) : t("jobStatus.processing")}</div>
             <div className="progress-track">
               <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
             </div>
@@ -69,15 +72,15 @@ export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
           </>
         )}
 
-        {status === "done" && <div className="job-stage-sub">字幕已產生，即將開啟編輯器…</div>}
+        {status === "done" && <div className="job-stage-sub">{t("jobStatus.ready")}</div>}
 
         {status === "failed" && (
           <>
-            <div className="job-error">{error ?? "處理失敗，請稍後再試"}</div>
+            <div className="job-error">{error ?? t("jobStatus.failedMsg")}</div>
             {onRetry && (
               <div>
                 <button className="btn btn-sm" onClick={onRetry}>
-                  重新上傳
+                  {t("jobStatus.retry")}
                 </button>
               </div>
             )}

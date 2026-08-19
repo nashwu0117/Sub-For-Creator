@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchAuthed, parseError } from "../api/client";
+import i18n from "../i18n";
 
 interface AuthedMedia {
   url: string | null;
@@ -35,7 +36,7 @@ export function useAuthedMedia(requestUrl: string | null): AuthedMedia {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "無法載入媒體");
+        setError(e instanceof Error ? e.message : i18n.t("errors.mediaLoad"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

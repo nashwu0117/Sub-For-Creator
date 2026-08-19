@@ -17,6 +17,7 @@ from app.api import health as health_router
 from app.api import jobs as jobs_router
 from app.api import media as media_router
 from app.api import subtitles as subtitles_router
+from app.api import uploads as uploads_router
 from app.config import get_settings
 from app.core.exceptions import (
     ASRError,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
         health_router.router,
         config_router.router,
         jobs_router.router,
+        uploads_router.router,
         subtitles_router.router,
         media_router.router,
         export_router.router,

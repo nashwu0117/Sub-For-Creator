@@ -1,9 +1,15 @@
-"""GET /api/jobs/{job_id}/export/{format} — text exports and burned-in renders.
+"""GET/POST /api/jobs/{job_id}/export/{format} — text exports and burned-in renders.
 
 Text formats (srt/vtt/txt/ass/fcpxml) are generated synchronously from the
 stored segments. mp4/webm_alpha burn the ASS subtitles into the source video
-with ffmpeg; renders are cached per job and guarded by a per-job lock so two
-concurrent requests never render twice.
+with ffmpeg; encodes can take minutes, so they run in a background thread
+instead of holding the request open (a long synchronous request would be
+killed by proxy read timeouts, e.g. nginx 504). Renders are cached per job.
+The render lifecycle:
+
+    POST /jobs/{id}/export/{fmt}/render   → start the encode (or "ready" if cached)
+    GET  /jobs/{id}/export/{fmt}/status   → {status: idle|rendering|ready|failed}
+    GET  /jobs/{id}/export/{fmt}          → download the finished file (409 until ready)
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
@@ -24,7 +31,7 @@ from app.config import Settings, get_settings
 from app.core import MediaProcessingError, probe_media
 from app.core.exceptions import RenderError
 from app.core.models import TranscriptionResult
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.exporters import AssStyle, export_ass, export_fcpxml, export_srt, export_text, export_vtt
 from app.models.db import Job
 from app.storage import get_storage, render_key, source_key
@@ -42,12 +49,31 @@ _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _render_locks: dict[str, threading.Lock] = {}
 _render_locks_guard = threading.Lock()
 
+#: In-memory render progress: (job_id, fmt) -> {"status", "started", "error"}.
+#: Only tracks in-flight renders; "ready" is derived from the cached file.
+_RENDER_STATES: dict[tuple[str, str], dict] = {}
+_RENDER_STATES_GUARD = threading.Lock()
+
 
 def _render_lock(job_id: str) -> threading.Lock:
     with _render_locks_guard:
         if job_id not in _render_locks:
             _render_locks[job_id] = threading.Lock()
         return _render_locks[job_id]
+
+
+def _set_render_state(job_id: str, fmt: str, status: str, error: str | None = None) -> None:
+    with _RENDER_STATES_GUARD:
+        _RENDER_STATES[(job_id, fmt)] = {
+            "status": status,
+            "started": time.time(),
+            "error": error,
+        }
+
+
+def _get_render_state(job_id: str, fmt: str) -> dict | None:
+    with _RENDER_STATES_GUARD:
+        return _RENDER_STATES.get((job_id, fmt))
 
 
 def _build_result(job: Job) -> TranscriptionResult:
@@ -197,9 +223,9 @@ def _ffmpeg_cmd(
     escaped = ass_path.replace("\\", "\\\\").replace(":", "\\:")
     if fmt == "mp4":
         cmd = [ffmpeg, "-y", "-i", source, "-vf", f"ass={escaped}"]
-        cmd += ["-c:v", "libx264", "-crf", "20", "-preset", "medium"]
+        cmd += ["-c:v", "libx264", "-crf", "20", "-preset", "faster"]
         cmd += ["-c:a", "copy"] if has_audio else ["-an"]
-        cmd += ["-movflags", "+faststart"]
+        cmd += ["-movflags", "+faststart", "-f", "mp4"]
     else:  # webm_alpha — subtitles on a fully transparent canvas, no source video
         # Verified on ffmpeg 6.1 + libvpx 1.14: the `color` source ignores
         # alpha syntax (black@0.0 is opaque) and the ass filter passes the
@@ -214,77 +240,185 @@ def _ffmpeg_cmd(
             f"ass={escaped},format=rgba,colorkey=black:0.15:0.0,format=yuva420p",
             "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
             "-auto-alt-ref", "0", "-b:v", "0", "-crf", "30", "-an",
+            "-f", "webm",
         ]
     cmd.append(out)
     return cmd
 
 
-def _render(job: Job, fmt: str, settings: Settings, **params) -> FileResponse:
-    kind, media_type = RENDER_FORMATS[fmt]
+def _run_render(job: Job, fmt: str, settings: Settings, params: dict, out_key: str) -> None:
+    """Encode burned-in subtitles to ``out_key`` (temp file + atomic rename).
+
+    The output is written to a ``.tmp`` sibling and renamed into place only
+    after ffmpeg succeeds, so a partial file never shows up as a finished
+    render (e.g. after a crash mid-encode).
+    """
     storage = get_storage()
-    key = render_key(job.id, kind)
-    stem = _stem(job)
-    filename = f"{stem}.{kind.split('.')[-1]}"
+    style = _build_style(
+        params["font_size"],
+        params["font_color"],
+        params["outline_color"],
+        params["font_family"],
+        params["position"],
+    )
+    result = _build_result(job)
+    ass_text = export_ass(result, style=style, karaoke=params["karaoke"])
 
-    def _file_response() -> FileResponse:
-        return FileResponse(
-            storage.open_path(key),
-            media_type=media_type,
-            filename=filename,
-            content_disposition_type="attachment",
+    tmpdir = tempfile.mkdtemp(prefix="sfc-render-")
+    try:
+        ass_path = os.path.join(tmpdir, "subtitle.ass")
+        with open(ass_path, "w", encoding="utf-8") as fh:
+            fh.write(ass_text)
+
+        ext = os.path.splitext(job.filename)[1].lower() or ".bin"
+        source = storage.open_path(source_key(job.id, ext))
+        out = storage.writable_path(out_key)
+        tmp_out = f"{out}.{os.getpid()}.tmp"
+        if os.path.exists(tmp_out):
+            os.unlink(tmp_out)
+        if fmt == "webm_alpha":
+            width, height, fps = _probe_video_meta(source)
+            duration = job.duration or 0.0
+        else:
+            width = height = 1920
+            fps, duration = 30.0, 0.0
+        cmd = _ffmpeg_cmd(
+            source, ass_path, tmp_out, fmt, _has_audio(source),
+            width=width, height=height, fps=fps, duration=duration,
         )
-
-    if storage.exists(key):
-        return _file_response()
-
-    with _render_lock(job.id):
-        if storage.exists(key):
-            return _file_response()
-
-        style = _build_style(
-            params["font_size"],
-            params["font_color"],
-            params["outline_color"],
-            params["font_family"],
-            params["position"],
-        )
-        result = _build_result(job)
-        ass_text = export_ass(result, style=style, karaoke=params["karaoke"])
-
-        tmpdir = tempfile.mkdtemp(prefix="sfc-render-")
         try:
-            ass_path = os.path.join(tmpdir, "subtitle.ass")
-            with open(ass_path, "w", encoding="utf-8") as fh:
-                fh.write(ass_text)
-
-            ext = os.path.splitext(job.filename)[1].lower() or ".bin"
-            source = storage.open_path(source_key(job.id, ext))
-            out = storage.writable_path(key)
-            if fmt == "webm_alpha":
-                width, height, fps = _probe_video_meta(source)
-                duration = job.duration or 0.0
-            else:
-                width = height = 1920
-                fps, duration = 30.0, 0.0
-            cmd = _ffmpeg_cmd(
-                source, ass_path, out, fmt, _has_audio(source),
-                width=width, height=height, fps=fps, duration=duration,
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=settings.render_timeout_seconds,
             )
-            try:
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=settings.render_timeout_seconds,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise RenderError("render timeout") from exc
-            if proc.returncode != 0:
-                raise RenderError(f"ffmpeg render failed: {proc.stderr[-500:]}")
-            storage.save(out, key)
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-    return _file_response()
+        except subprocess.TimeoutExpired as exc:
+            raise RenderError("render timeout") from exc
+        if proc.returncode != 0:
+            raise RenderError(f"ffmpeg render failed: {proc.stderr[-500:]}")
+        os.replace(tmp_out, out)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _render_worker(job_id: str, fmt: str, settings: Settings, params: dict) -> None:
+    """Background encode; always writes a terminal state for the status endpoint."""
+    try:
+        with SessionLocal() as db:
+            job = get_job_or_404(db, job_id)
+            key = render_key(job.id, RENDER_FORMATS[fmt][0])
+            if not get_storage().exists(key):
+                _run_render(job, fmt, settings, params, key)
+        _set_render_state(job_id, fmt, "ready")
+    except Exception as exc:  # noqa: BLE001 — surface any failure via /status
+        _set_render_state(job_id, fmt, "failed", str(exc))
+
+
+def start_render(job: Job, fmt: str, settings: Settings, params: dict) -> str:
+    """Start a background render if needed; returns the resulting status."""
+    key = render_key(job.id, RENDER_FORMATS[fmt][0])
+    if get_storage().exists(key):
+        _set_render_state(job.id, fmt, "ready")
+        return "ready"
+    state = _get_render_state(job.id, fmt)
+    if state and state["status"] == "rendering":
+        return "rendering"
+    _set_render_state(job.id, fmt, "rendering")
+    thread = threading.Thread(
+        target=_render_worker,
+        args=(job.id, fmt, settings, params),
+        name=f"sfc-render-{job.id}-{fmt}",
+        daemon=True,
+    )
+    thread.start()
+    return "rendering"
+
+
+def render_status(job_id: str, fmt: str, settings: Settings) -> tuple[str, str | None]:
+    """Current render state: ready (cached file), rendering, failed, or idle."""
+    state = _get_render_state(job_id, fmt)
+    if state and state["status"] == "rendering":
+        # A worker can die without writing a terminal state (e.g. API restart);
+        # after the render budget elapses, fall through to the cache check.
+        if time.time() - state["started"] > settings.render_timeout_seconds + 120:
+            _set_render_state(job_id, fmt, "idle")
+        else:
+            return "rendering", None
+    if get_storage().exists(render_key(job_id, RENDER_FORMATS[fmt][0])):
+        return "ready", None
+    if state and state["status"] == "failed":
+        return "failed", state.get("error")
+    return "idle", None
+
+
+def _render_params(
+    font_size: int,
+    font_color: str,
+    outline_color: str,
+    font_family: str | None,
+    karaoke: bool,
+    position: str,
+) -> dict:
+    return {
+        "font_size": font_size,
+        "font_color": font_color,
+        "outline_color": outline_color,
+        "font_family": font_family,
+        "karaoke": karaoke,
+        "position": position,
+    }
+
+
+def _validate_render_format(fmt: str) -> None:
+    if fmt not in RENDER_FORMATS:
+        raise HTTPException(status_code=422, detail=f"invalid render format {fmt!r}")
+
+
+@router.post("/jobs/{job_id}/export/{fmt}/render")
+def start_export_render(
+    job_id: str,
+    fmt: str,
+    token: str = Depends(session_token),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    font_size: int = Query(64, ge=1),
+    font_color: str = Query("#FFFFFF"),
+    outline_color: str = Query("#000000"),
+    font_family: str | None = Query(None),
+    karaoke: str = Query("0"),
+    position: str = Query("bottom"),
+) -> dict:
+    """Start (or resume) a background burn-in encode; returns its status."""
+    _validate_render_format(fmt)
+    if karaoke not in ("0", "1"):
+        raise HTTPException(status_code=422, detail="karaoke must be 0 or 1")
+    job = get_job_or_404(db, job_id)
+    ensure_not_expired(db, job)
+    require_done(job)
+    status = start_render(
+        job,
+        fmt,
+        settings,
+        _render_params(font_size, font_color, outline_color, font_family, karaoke == "1", position),
+    )
+    return {"status": status}
+
+
+@router.get("/jobs/{job_id}/export/{fmt}/status")
+def export_render_status(
+    job_id: str,
+    fmt: str,
+    token: str = Depends(session_token),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Render progress: ``idle`` | ``rendering`` | ``ready`` | ``failed``."""
+    _validate_render_format(fmt)
+    job = get_job_or_404(db, job_id)
+    require_done(job)
+    status, error = render_status(job_id, fmt, settings)
+    return {"status": status, "error": error}
 
 
 @router.get("/jobs/{job_id}/export/{fmt}")
@@ -302,6 +436,9 @@ def export_job(
     position: str = Query("bottom"),
     include_punctuation: bool = Query(True),
 ) -> Response:
+    """Download an export. Text formats are generated on the fly; render
+    formats return the cached encode (``409`` until ``POST .../render``
+    finishes)."""
     if fmt not in TEXT_FORMATS and fmt not in RENDER_FORMATS:
         raise HTTPException(status_code=422, detail=f"invalid export format {fmt!r}")
     if karaoke not in ("0", "1"):
@@ -322,4 +459,20 @@ def export_job(
     }
     if fmt in TEXT_FORMATS:
         return _export_text(job, fmt, settings, **params)
-    return _render(job, fmt, settings, **params)
+
+    kind, media_type = RENDER_FORMATS[fmt]
+    storage = get_storage()
+    key = render_key(job.id, kind)
+    if not storage.exists(key):
+        raise HTTPException(
+            status_code=409,
+            detail="render not ready; POST /jobs/{job_id}/export/{fmt}/render first",
+        )
+    stem = _stem(job)
+    filename = f"{stem}.{kind.split('.')[-1]}"
+    return FileResponse(
+        storage.open_path(key),
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="attachment",
+    )

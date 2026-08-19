@@ -1,46 +1,47 @@
+import { useTranslation, Trans } from "react-i18next";
+
 export default function Terms() {
+  const { t } = useTranslation();
   return (
     <article className="static-page">
-      <h1>服務條款</h1>
-      <p className="effective-date">生效日期：2026-08-19</p>
+      <h1>{t("terms.title")}</h1>
+      <p className="effective-date">{t("terms.effective")}</p>
 
-      <h2>1. 服務性質</h2>
-      <p>
-        Sub for Creator 是一個開源（AGPL-3.0）、免費的 AI 影片字幕工具。本服務以「現況」（AS IS）提供，不保證可用性、準確性或完整性。
-      </p>
+      <h2>{t("terms.h1")}</h2>
+      <p>{t("terms.s1")}</p>
 
-      <h2>2. 禁止事項</h2>
-      <p>使用本服務時，你不得：</p>
+      <h2>{t("terms.h2")}</h2>
+      <p>{t("terms.s2intro")}</p>
       <ul>
-        <li>上傳違法、侵權、色情、仇恨言論或涉及兒童性剝削的內容；</li>
-        <li>上傳你無權使用的內容（請確保你擁有影片的版權或授權）；</li>
-        <li>以自動化工具大量刷取額度、干擾服務運作或規避限流機制；</li>
-        <li>將本服務用於任何商業轉售或閉源付費服務（請遵守 AGPL-3.0 授權）。</li>
+        <li>{t("terms.s2a")}</li>
+        <li>{t("terms.s2b")}</li>
+        <li>{t("terms.s2c")}</li>
+        <li>{t("terms.s2d")}</li>
       </ul>
 
-      <h2>3. 檔案保存與刪除</h2>
-      <p>上傳檔案與產生的字幕在處理完成後保留 48 小時，之後自動永久刪除，無法恢復。請在期限內下載你的成果。</p>
+      <h2>{t("terms.h3")}</h2>
+      <p>{t("terms.s3")}</p>
 
-      <h2>4. 額度限制</h2>
-      <p>
-        本服務為免費提供，設有每人每日上傳時長、單檔大小與佇列長度限制（見服務內顯示之限制）。我們保留調整限制的權利。
-      </p>
+      <h2>{t("terms.h4")}</h2>
+      <p>{t("terms.s4")}</p>
 
-      <h2>5. 免責聲明</h2>
+      <h2>{t("terms.h5")}</h2>
       <ul>
-        <li>字幕內容由 AI 自動產生，<strong>可能存在錯誤</strong>，使用前請自行校對；</li>
-        <li>因服務中斷、資料遺失或 GPU 資源不足造成的損失，本專案不負賠償責任；</li>
-        <li>本服務可能隨時變更或終止。</li>
+        <li>
+          <Trans i18nKey="terms.s5a" components={[<strong key="a" />]} />
+        </li>
+        <li>{t("terms.s5b")}</li>
+        <li>{t("terms.s5c")}</li>
       </ul>
 
-      <h2>6. 違規處理</h2>
-      <p>違反本條款者，我們保留拒絕提供服務的權利（例如限制 session 存取）。</p>
+      <h2>{t("terms.h6")}</h2>
+      <p>{t("terms.s6")}</p>
 
-      <h2>7. 條款變更</h2>
-      <p>本條款可能更新，更新後於本頁公告。繼續使用即代表同意更新後的條款。</p>
+      <h2>{t("terms.h7")}</h2>
+      <p>{t("terms.s7")}</p>
 
       <p style={{ marginTop: "2rem", fontSize: "13px", color: "var(--text-faint)" }}>
-        *本文件為公開服務的營運條款。若自行架設本開源專案，請依自身情況調整。
+        {t("terms.note")}
       </p>
     </article>
   );

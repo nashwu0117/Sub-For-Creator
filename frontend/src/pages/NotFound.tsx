@@ -1,13 +1,15 @@
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 export default function NotFound() {
+  const { t } = useTranslation();
   return (
     <div className="not-found">
       <div className="not-found-code">404</div>
-      <div className="not-found-title">找不到這個頁面</div>
-      <p className="not-found-sub">你造訪的頁面不存在或已被移除。</p>
+      <div className="not-found-title">{t("notFound.title")}</div>
+      <p className="not-found-sub">{t("notFound.sub")}</p>
       <Link to="/" className="btn btn-primary">
-        回到首頁
+        {t("common.backHome")}
       </Link>
     </div>
   );

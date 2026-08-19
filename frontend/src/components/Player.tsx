@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { forwardRef, useImperativeHandle, useRef } from "react";
 
 export interface PlayerHandle {
@@ -19,6 +20,7 @@ const Player = forwardRef<PlayerHandle, Props>(function Player(
   { src, error, onTimeUpdate, onPlay, onPause },
   ref,
 ) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useImperativeHandle(
@@ -41,7 +43,7 @@ const Player = forwardRef<PlayerHandle, Props>(function Player(
   if (error) {
     return (
       <div className="player-overlay" role="alert">
-        <div className="player-overlay-title">無法載入影片</div>
+        <div className="player-overlay-title">{t("player.loadError")}</div>
         <div className="player-overlay-sub">{error}</div>
       </div>
     );
@@ -64,7 +66,7 @@ const Player = forwardRef<PlayerHandle, Props>(function Player(
       ) : (
         <div className="player-overlay" aria-live="polite">
           <span className="spinner spinner-dark" aria-hidden="true" />
-          <div className="player-overlay-sub">正在載入影片…</div>
+          <div className="player-overlay-sub">{t("player.loading")}</div>
         </div>
       )}
     </>

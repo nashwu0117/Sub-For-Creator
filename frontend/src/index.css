@@ -259,6 +259,38 @@ textarea {
   height: 16px;
 }
 
+.lang-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: var(--space-2);
+}
+
+.lang-switcher-label {
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.lang-switcher-select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.lang-switcher-select:hover {
+  border-color: var(--border-strong);
+}
+
+.lang-switcher-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ---------- Footer ---------- */
 .site-footer {
   border-top: 1px solid var(--border);
@@ -1497,6 +1529,39 @@ textarea {
   color: var(--text-faint);
 }
 
+/* 字型子區塊（免費系統字體 / 已上傳）與下載按鈕 */
+.style-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.style-subsection-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.font-item .btn-sm {
+  flex-shrink: 0;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: var(--space-1) 0 0;
+}
+
+.inline-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.inline-link:hover {
+  text-decoration: underline;
+}
+
 /* 樣式預設列表 */
 .preset-list {
   list-style: none;
@@ -1745,6 +1810,14 @@ textarea {
 
   .github-link span {
     display: none;
+  }
+
+  .lang-switcher-label {
+    display: none;
+  }
+
+  .lang-switcher {
+    margin-right: 0;
   }
 
   .hero {

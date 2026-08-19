@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useRef } from "react";
 import type { Segment } from "../types";
 import SubtitleItem from "./SubtitleItem";
@@ -21,6 +22,7 @@ export default function SubtitleList({
   dirty,
   saving,
 }: Props) {
+  const { t } = useTranslation();
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // 播放中的片段自動捲入視野
@@ -57,10 +59,10 @@ export default function SubtitleList({
   return (
     <div className="card subtitle-list-card">
       <div className="subtitle-list-header">
-        <h2 className="card-title">字幕（{segments.length}）</h2>
-        {dirty && <span className="dirty-badge">未儲存</span>}
+        <h2 className="card-title">{t("subtitleList.title", { count: segments.length })}</h2>
+        {dirty && <span className="dirty-badge">{t("common.unsaved")}</span>}
         <button className="btn btn-sm btn-primary" onClick={onSave} disabled={!dirty || saving}>
-          {saving ? "儲存中…" : "儲存變更"}
+          {saving ? t("subtitleList.saving") : t("subtitleList.save")}
         </button>
       </div>
 
@@ -83,16 +85,16 @@ export default function SubtitleList({
             />
           </div>
         ))}
-        {segments.length === 0 && <div className="recent-empty">尚無字幕，點擊下方新增。</div>}
+        {segments.length === 0 && <div className="recent-empty">{t("subtitleList.empty")}</div>}
       </div>
 
       <button className="btn btn-ghost subtitle-add" onClick={addSegment}>
-        ＋ 新增字幕
+        {t("subtitleList.add")}
       </button>
 
       {dirty && (
         <div className="subtitle-list-footer">
-          <span className="save-hint">有未儲存的變更，離開前請記得儲存。</span>
+          <span className="save-hint">{t("subtitleList.footer")}</span>
         </div>
       )}
     </div>

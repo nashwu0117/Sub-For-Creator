@@ -3,17 +3,22 @@ import type {
   CreateJobResponse,
   ExportFormat,
   FontItem,
+  FontsResponse,
   Job,
   Segment,
   StyleParams,
   SubtitlesResponse,
 } from "../types";
+import i18n from "../i18n";
 
 const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
 const SESSION_KEY = "sfc_session_token";
 
-/** 產生 UUID v4（crypto.randomUUID，不支援時退回手動實作） */
+//: 分片上傳的單片大小（必須遠低於中間代理的單請求上限，如 Codespaces ~16MB）
+const CHUNK_SIZE = 8 * 1024 * 1024;
+
+/** Generate a UUID v4 (crypto.randomUUID with manual fallback) */
 function generateUuid(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -25,7 +30,7 @@ function generateUuid(): string {
   });
 }
 
-/** 取得（或建立）匿名 session token */
+/** Get (or create) the anonymous session token */
 export function getSessionToken(): string {
   let token = localStorage.getItem(SESSION_KEY);
   if (!token) {
@@ -35,9 +40,9 @@ export function getSessionToken(): string {
   return token;
 }
 
-/** 從錯誤回應中解析 { detail }，否則回退到狀態碼訊息 */
+/** Parse { detail } from an error response, falling back to a status message */
 export async function parseError(res: Response): Promise<Error> {
-  let detail = `請求失敗（HTTP ${res.status}）`;
+  let detail = i18n.t("errors.requestFailed", { code: res.status });
   try {
     const body: unknown = await res.json();
     if (body && typeof body === "object" && "detail" in body) {
@@ -45,7 +50,7 @@ export async function parseError(res: Response): Promise<Error> {
       if (typeof d === "string" && d.length > 0) detail = d;
     }
   } catch {
-    // 非 JSON 回應，保留預設訊息
+    // non-JSON response, keep the default message
   }
   return new Error(detail);
 }
@@ -53,11 +58,11 @@ export async function parseError(res: Response): Promise<Error> {
 interface RequestOptions {
   method?: string;
   body?: BodyInit;
-  /** 是否帶上 X-Session-Token（預設 true；health 除外） */
+  /** whether to attach X-Session-Token (default true; health excluded) */
   withToken?: boolean;
 }
 
-/** 通用 JSON 請求包裝 */
+/** Generic JSON request wrapper */
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, withToken = true } = options;
   const headers = new Headers();
@@ -76,8 +81,8 @@ export interface HealthResponse {
 }
 
 /**
- * 帶 X-Session-Token 的 fetch。
- * <video> / wavesurfer 等無法自訂 header 的載入情境，需先以此取得 blob URL。
+ * fetch with X-Session-Token.
+ * <video> / wavesurfer cannot set custom headers, so they fetch a blob URL first.
  */
 export function fetchAuthed(input: RequestInfo | URL): Promise<Response> {
   return fetch(input, { headers: { "X-Session-Token": getSessionToken() } });
@@ -97,11 +102,7 @@ export interface CreateJobOptions {
   punctuation_threshold?: number;
 }
 
-/**
- * 上傳檔案建立作業（使用 XMLHttpRequest 以取得上傳進度）。
- * 成功時 resolve 202 回應；失敗時 reject Error（含伺服器 detail）。
- */
-export function createJob(
+function uploadSingle(
   file: File,
   language: string,
   options?: CreateJobOptions,
@@ -121,7 +122,7 @@ export function createJob(
       try {
         body = JSON.parse(xhr.responseText);
       } catch {
-        // 非 JSON 回應
+        // non-JSON response
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(body as CreateJobResponse);
@@ -129,11 +130,11 @@ export function createJob(
         const detail =
           body && typeof body === "object" && "detail" in body && typeof (body as { detail: unknown }).detail === "string"
             ? ((body as { detail: string }).detail as string)
-            : `上傳失敗（HTTP ${xhr.status}）`;
+            : i18n.t("errors.uploadFailed", { code: xhr.status });
         reject(new Error(detail));
       }
     };
-    xhr.onerror = () => reject(new Error("網路錯誤，無法連線伺服器"));
+    xhr.onerror = () => reject(new Error(i18n.t("errors.network")));
     const form = new FormData();
     form.append("file", file);
     form.append("language", language);
@@ -142,18 +143,132 @@ export function createJob(
   });
 }
 
+function uploadChunk(
+  uploadId: string,
+  index: number,
+  data: Blob,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/jobs/uploads/${encodeURIComponent(uploadId)}/chunks`);
+    xhr.setRequestHeader("X-Session-Token", getSessionToken());
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        let detail = i18n.t("errors.uploadFailed", { code: xhr.status });
+        try {
+          const body: unknown = JSON.parse(xhr.responseText);
+          if (
+            body &&
+            typeof body === "object" &&
+            "detail" in body &&
+            typeof (body as { detail: unknown }).detail === "string"
+          ) {
+            detail = (body as { detail: string }).detail;
+          }
+        } catch {
+          // non-JSON response
+        }
+        reject(new Error(detail));
+      }
+    };
+    xhr.onerror = () => reject(new Error(i18n.t("errors.network")));
+    const form = new FormData();
+    form.append("index", String(index));
+    form.append("data", data);
+    xhr.send(form);
+  });
+}
+
+/**
+ * Chunked upload: start a session, send 8MiB chunks, then complete.
+ * Bypasses proxies that cap a single request body (e.g. GitHub Codespaces).
+ */
+async function uploadChunked(
+  file: File,
+  language: string,
+  options?: CreateJobOptions,
+  onProgress?: (percent: number) => void,
+): Promise<CreateJobResponse> {
+  const initForm = new FormData();
+  initForm.append("filename", file.name);
+  initForm.append("language", language);
+  if (options) initForm.append("options", JSON.stringify(options));
+  const { upload_id } = await request<{ upload_id: string }>("/jobs/uploads", {
+    method: "POST",
+    body: initForm,
+  });
+
+  const total = file.size;
+  let sent = 0;
+  try {
+    for (let start = 0; start < total; start += CHUNK_SIZE) {
+      const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, total));
+      await uploadChunk(upload_id, Math.floor(start / CHUNK_SIZE), chunk);
+      sent += chunk.size;
+      onProgress?.(Math.round((sent / total) * 100));
+    }
+    return await request<CreateJobResponse>(`/jobs/uploads/${encodeURIComponent(upload_id)}/complete`, {
+      method: "POST",
+    });
+  } catch (e) {
+    try {
+      await request(`/jobs/uploads/${encodeURIComponent(upload_id)}`, { method: "DELETE" });
+    } catch {
+      // best effort cleanup
+    }
+    throw e;
+  }
+}
+
+/**
+ * Upload a file to create a job. Uses XMLHttpRequest for progress reporting.
+ * Large files are split into chunks to stay under proxy request-body caps.
+ * Resolves with the 202 response; rejects with an Error (server detail).
+ */
+export function createJob(
+  file: File,
+  language: string,
+  options?: CreateJobOptions,
+  onProgress?: (percent: number) => void,
+): Promise<CreateJobResponse> {
+  if (file.size > CHUNK_SIZE) {
+    return uploadChunked(file, language, options, onProgress);
+  }
+  return uploadSingle(file, language, options, onProgress);
+}
+
 export function getJob(jobId: string): Promise<Job> {
   return request<Job>(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
-/** 已上傳的自訂字型列表（GET /api/fonts，自動帶 session token） */
-export function getFonts(): Promise<{ fonts: FontItem[] }> {
-  return request<{ fonts: FontItem[] }>("/fonts");
+/** Uploaded custom fonts list + bundled free fonts (GET /api/fonts) */
+export function getFonts(): Promise<FontsResponse> {
+  return request<FontsResponse>("/fonts");
+}
+
+/** GET URL for an uploaded font file (attachment download) */
+export function getUploadedFontUrl(filename: string): string {
+  return resolveApiUrl(`/fonts/${encodeURIComponent(filename)}`);
+}
+
+/** GET URL for a bundled free font file (attachment download) */
+export function getSystemFontUrl(filename: string): string {
+  return resolveApiUrl(`/fonts/system/${encodeURIComponent(filename)}`);
+}
+
+/** Download any font (or other attachment) via fetch + blob, returning an object URL */
+export async function fetchDownloadBlob(url: string): Promise<string> {
+  const res = await fetch(url, { headers: { "X-Session-Token": getSessionToken() } });
+  if (!res.ok) throw await parseError(res);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 /**
- * 上傳自訂字型（POST /api/fonts，multipart）。
- * 使用 XMLHttpRequest 以取得上傳進度；失敗時 reject Error（含伺服器 detail）。
+ * Upload a custom font (POST /api/fonts, multipart).
+ * Uses XMLHttpRequest for progress; rejects with an Error (server detail).
  */
 export function uploadFont(file: File, onProgress?: (percent: number) => void): Promise<FontItem> {
   return new Promise((resolve, reject) => {
@@ -170,7 +285,7 @@ export function uploadFont(file: File, onProgress?: (percent: number) => void): 
       try {
         body = JSON.parse(xhr.responseText);
       } catch {
-        // 非 JSON 回應
+        // non-JSON response
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(body as FontItem);
@@ -178,11 +293,11 @@ export function uploadFont(file: File, onProgress?: (percent: number) => void): 
         const detail =
           body && typeof body === "object" && "detail" in body && typeof (body as { detail: unknown }).detail === "string"
             ? ((body as { detail: string }).detail as string)
-            : `上傳失敗（HTTP ${xhr.status}）`;
+            : i18n.t("errors.uploadFailed", { code: xhr.status });
         reject(new Error(detail));
       }
     };
-    xhr.onerror = () => reject(new Error("網路錯誤，無法連線伺服器"));
+    xhr.onerror = () => reject(new Error(i18n.t("errors.network")));
     const form = new FormData();
     form.append("file", file);
     xhr.send(form);
@@ -201,8 +316,8 @@ export function putSubtitles(jobId: string, segments: Segment[]): Promise<{ ok: 
 }
 
 /**
- * 將 API 路徑解析為絕對 URL：API_BASE 為絕對網址時直接使用，
- * 相對路徑（預設 /api）則以 window.location.origin 補齊。
+ * Resolve an API path to an absolute URL: absolute API_BASE is used directly,
+ * relative (default /api) is resolved against window.location.origin.
  */
 function resolveApiUrl(path: string): string {
   const base = API_BASE.startsWith("http") ? API_BASE : `${window.location.origin}${API_BASE}`;
@@ -210,9 +325,16 @@ function resolveApiUrl(path: string): string {
   return new URL(path.replace(/^\/+/, ""), baseWithSlash).toString();
 }
 
-/** 建立匯出 URL（含樣式 query 參數） */
-export function buildExportUrl(jobId: string, format: ExportFormat, style?: StyleParams): string {
-  const url = new URL(resolveApiUrl(`/jobs/${encodeURIComponent(jobId)}/export/${format}`));
+/** Build an export URL (with style query params); ``suffix`` = "" | "/render" | "/status" */
+function buildExportSubUrl(
+  jobId: string,
+  format: ExportFormat,
+  suffix: string,
+  style?: StyleParams,
+): string {
+  const url = new URL(
+    resolveApiUrl(`/jobs/${encodeURIComponent(jobId)}/export/${format}${suffix}`),
+  );
   if (style) {
     if (style.font_size !== undefined) url.searchParams.set("font_size", String(style.font_size));
     if (style.font_color) url.searchParams.set("font_color", style.font_color);
@@ -225,6 +347,11 @@ export function buildExportUrl(jobId: string, format: ExportFormat, style?: Styl
   return url.toString();
 }
 
+/** Build an export URL (with style query params) */
+export function buildExportUrl(jobId: string, format: ExportFormat, style?: StyleParams): string {
+  return buildExportSubUrl(jobId, format, "", style);
+}
+
 export function getMediaUrl(jobId: string): string {
   return `${API_BASE}/jobs/${encodeURIComponent(jobId)}/media`;
 }
@@ -233,7 +360,38 @@ export function getAudioUrl(jobId: string): string {
   return `${API_BASE}/jobs/${encodeURIComponent(jobId)}/audio`;
 }
 
-/** 以 fetch 下載（帶 session header），回傳 blob URL 供 <a> 觸發下載 */
+export interface RenderStatusResponse {
+  status: "idle" | "rendering" | "ready" | "failed";
+  error?: string;
+}
+
+/** Start a background burn-in render (POST .../export/{fmt}/render) */
+export async function startRenderExport(
+  jobId: string,
+  format: ExportFormat,
+  style?: StyleParams,
+): Promise<RenderStatusResponse> {
+  const res = await fetch(buildExportSubUrl(jobId, format, "/render", style), {
+    method: "POST",
+    headers: { "X-Session-Token": getSessionToken() },
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as RenderStatusResponse;
+}
+
+/** Poll the burn-in render progress (GET .../export/{fmt}/status) */
+export async function getRenderExportStatus(
+  jobId: string,
+  format: ExportFormat,
+): Promise<RenderStatusResponse> {
+  const res = await fetch(buildExportSubUrl(jobId, format, "/status"), {
+    headers: { "X-Session-Token": getSessionToken() },
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as RenderStatusResponse;
+}
+
+/** Download via fetch (with session header), returning a blob URL for <a> download */
 export async function fetchExportBlob(jobId: string, format: ExportFormat, style?: StyleParams): Promise<string> {
   const url = buildExportUrl(jobId, format, style);
   const res = await fetch(url, { headers: { "X-Session-Token": getSessionToken() } });

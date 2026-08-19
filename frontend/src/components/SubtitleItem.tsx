@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef } from "react";
 import type { Segment } from "../types";
 
@@ -31,6 +32,7 @@ function round2(x: number): number {
 }
 
 export default function SubtitleItem({ segment, index, active, onSeek, onChange, onDelete }: Props) {
+  const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 自動調整高度
@@ -55,7 +57,7 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
             e.stopPropagation();
             onSeek(segment.start);
           }}
-          aria-label={`跳到片段 ${index + 1}`}
+          aria-label={t("subtitleItem.jumpTo", { n: index + 1 })}
         >
           {String(index + 1).padStart(2, "0")}
         </button>
@@ -64,7 +66,7 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
             className="time-input"
             key={`start-${segment.start}`}
             defaultValue={formatTime(segment.start)}
-            aria-label={`片段 ${index + 1} 開始時間`}
+            aria-label={t("subtitleItem.startTime", { n: index + 1 })}
             inputMode="decimal"
             onBlur={(e) => {
               const t = parseTime(e.target.value);
@@ -83,7 +85,7 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
             className="time-input"
             key={`end-${segment.end}`}
             defaultValue={formatTime(segment.end)}
-            aria-label={`片段 ${index + 1} 結束時間`}
+            aria-label={t("subtitleItem.endTime", { n: index + 1 })}
             inputMode="decimal"
             onBlur={(e) => {
               const t = parseTime(e.target.value);
@@ -100,8 +102,8 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
           <button
             type="button"
             className="nudge-btn"
-            title="開始時間 -0.1 秒"
-            aria-label={`片段 ${index + 1} 開始時間減 0.1 秒`}
+            title={t("subtitleItem.startMinusTitle")}
+            aria-label={t("subtitleItem.startMinusAria", { n: index + 1 })}
             onClick={() => onChange({ start: round2(Math.max(0, segment.start - 0.1)) })}
           >
             −
@@ -109,8 +111,8 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
           <button
             type="button"
             className="nudge-btn"
-            title="開始時間 +0.1 秒"
-            aria-label={`片段 ${index + 1} 開始時間加 0.1 秒`}
+            title={t("subtitleItem.startPlusTitle")}
+            aria-label={t("subtitleItem.startPlusAria", { n: index + 1 })}
             onClick={() => onChange({ start: round2(segment.start + 0.1) })}
           >
             +
@@ -119,8 +121,8 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
         <button
           type="button"
           className="subtitle-delete"
-          title="刪除此字幕"
-          aria-label={`刪除片段 ${index + 1}`}
+          title={t("subtitleItem.deleteTitle")}
+          aria-label={t("subtitleItem.deleteAria", { n: index + 1 })}
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
@@ -140,8 +142,8 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
         className="subtitle-textarea"
         value={segment.text}
         rows={1}
-        placeholder="輸入字幕文字…"
-        aria-label={`片段 ${index + 1} 文字`}
+        placeholder={t("subtitleItem.placeholder")}
+        aria-label={t("subtitleItem.textAria", { n: index + 1 })}
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => onChange({ text: e.target.value })}
       />
