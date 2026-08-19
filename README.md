@@ -7,6 +7,11 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
 ![Frontend](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-blue.svg)
 
+> 🌐 [查看專案介紹網站](https://nashwu0117.github.io/Sub-For-Creator/) · [GitHub Repository](https://github.com/nashwu0117/Sub-For-Creator)
+
+一個適合創作者的開源字幕工作台：從影片上傳、AI 辨識、時間軸校對，到多格式匯出，全部在同一個流程完成。
+
+
 ## 功能
 
 - **AI 語音辨識 + 智慧斷句**：以 WhisperX 進行逐字對齊，再依標點、停頓與行長規則自動切成適合閱讀的字幕行。
