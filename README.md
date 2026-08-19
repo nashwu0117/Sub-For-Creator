@@ -52,7 +52,18 @@ flowchart LR
 
 ## 快速開始
 
-### A. CLI 本地使用
+### A. 在 GitHub 上直接試用（推薦）
+
+不需要自己的電腦，任何有 GitHub 帳號的人都能開：
+
+1. 開啟本 repo：https://github.com/nashwu0117/Sub-For-Creator
+2. 點綠色 **Code** 按鈕 → **Codespaces** 分頁 → **Create codespace on main**
+3. 等 2-4 分鐘（環境自動 build 並啟動全部服務）
+4. 完成後瀏覽器自動開啟 **http://localhost:8080**，直接上傳影片試用
+
+> Codespaces 免費用戶每月 120 core-hours（大約可開 30 次 4-core 環境）。第一次啟動較慢（要 build 鏡像），之後幾秒就能恢復。
+
+### B. CLI 本地使用
 
 不需要架設伺服器，直接在單一影片檔上跑完整流程：
 
@@ -75,7 +86,7 @@ python cli/subforcreator.py video.mp4 --lang zh --format ass --karaoke --output 
 
 CLI 支援 `--lang`（ISO 639-1，省略為自動偵測）、`--model`（預設 `large-v3`）、`--max-line-chars`、`--font-size`、`--font-color`、`--outline-color`、`--font-family`、`--position` 等參數，詳見 `python cli/subforcreator.py --help`。
 
-### B. Docker 部署
+### C. Docker 部署
 
 ```bash
 cp .env.example .env   # 依需求調整 SFC_ 環境變數
@@ -85,7 +96,7 @@ docker compose up -d --build
 
 GPU 主機注意事項：WhisperX 需要 CUDA。請在 `docker-compose.yml` 取消註解 nvidia runtime 區塊，並在 Dockerfile 改用 `requirements-gpu.txt`（內含 whisperx 與 torch）。CPU 主機可改用 faster-whisper 後端（`SFC_ASR_BACKEND=faster-whisper`）。
 
-### C. 本地開發
+### D. 本地開發
 
 後端（需要 Redis；以下命令需在 `backend/` 目錄下執行）：
 

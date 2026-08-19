@@ -1,0 +1,28 @@
+{
+  "name": "Sub for Creator",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "cp .env.example .env && docker compose up -d --build",
+  "forwardPorts": [8080, 8000],
+  "portsAttributes": {
+    "8080": {
+      "label": "Web UI",
+      "onAutoForward": "openBrowser"
+    },
+    "8000": {
+      "label": "API",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
