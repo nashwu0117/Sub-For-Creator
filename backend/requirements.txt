@@ -1,0 +1,20 @@
+# --- Web framework ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7,<3
+pydantic-settings>=2.3
+
+# --- Queue / DB ---
+celery[redis]>=5.4,<6
+redis>=5.0
+SQLAlchemy>=2.0,<3
+
+# --- ASR (CPU-capable; WhisperX itself lives in requirements-gpu.txt) ---
+faster-whisper>=1.0
+
+# --- Storage (S3/R2, optional but included) ---
+boto3>=1.34
+
+# --- CLI ---
+tqdm>=4.66

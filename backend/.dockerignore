@@ -1,0 +1,11 @@
+# 后端构建上下文排除（compose 中 api/worker 的 build context 是 backend/）
+.git
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.venv
+data
+storage
+tests
+*.db

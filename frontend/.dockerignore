@@ -1,0 +1,5 @@
+# 前端构建上下文排除（compose 中 web 的 build context 是 frontend/）
+node_modules
+dist
+.vite
+.git

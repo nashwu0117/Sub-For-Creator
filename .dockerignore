@@ -1,0 +1,13 @@
+# Docker 构建上下文排除（仓库根目录）
+# 注意：compose 构建上下文分别是 backend/ 与 frontend/，
+# 实际生效的排除文件见 backend/.dockerignore 与 frontend/.dockerignore
+node_modules
+frontend/dist
+.git
+data
+storage
+__pycache__
+.venv
+*.db
+.codegraph
+.omo

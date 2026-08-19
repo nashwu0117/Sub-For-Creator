@@ -1,0 +1,57 @@
+"""ORM models: Job (transcription jobs) and Usage (daily quota accounting)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint, select
+from sqlalchemy.orm import Mapped, Session, mapped_column
+
+from app.core.models import JobStatus
+from app.database import Base, utcnow
+
+#: statuses that occupy a queue slot
+ACTIVE_STATUSES: tuple[str, ...] = (JobStatus.QUEUED.value, JobStatus.PROCESSING.value)
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    session_token: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), default=JobStatus.QUEUED.value)
+    stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model_size: Mapped[str] = mapped_column(String(32))
+    duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    segments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Usage(Base):
+    __tablename__ = "usage"
+    __table_args__ = (UniqueConstraint("session_token", "date", name="uq_usage_token_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_token: Mapped[str] = mapped_column(String(64), index=True)
+    date: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD (UTC)
+    uploaded_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+
+    @classmethod
+    def upsert(cls, db: Session, session_token: str, date: str, add_seconds: float) -> Usage:
+        """Add ``add_seconds`` to today's usage row for the token (create if absent)."""
+        row = db.scalar(
+            select(cls).where(cls.session_token == session_token, cls.date == date)
+        )
+        if row is None:
+            row = cls(session_token=session_token, date=date, uploaded_seconds=add_seconds)
+            db.add(row)
+        else:
+            row.uploaded_seconds += add_seconds
+        return row

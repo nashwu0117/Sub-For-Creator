@@ -1,0 +1,136 @@
+# =============================================================================
+# Sub-For-Creator 部署编排（docker compose，无需 version 字段）
+#
+# 服务：redis（消息队列） / api（FastAPI :8000） / worker（Celery）
+#       / web（nginx :8080） + 可选 postgres（默认注释，见下）
+#
+# 快速开始：
+#   cp .env.example .env
+#   docker compose up -d --build
+#   前端：http://localhost:8080     API：http://localhost:8000/api
+#
+# ---------- PostgreSQL 说明（重要）----------
+# 默认使用 SQLite（/data/app.db，持久化在 sfc-data 卷），单机部署零配置。
+# 迁移到公共托管 / 多实例时启用 postgres，步骤：
+#   1) 在 backend/requirements.txt 中追加一行：psycopg[binary]>=3.1
+#      （SQLAlchemy 连接 postgres 需要该驱动；orchestrator 未在默认依赖中携带）
+#   2) 取消下方 postgres 服务块注释；
+#   3) 在 .env 中设置 SFC_DATABASE_URL 为：
+#      postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+#   4) 给 api / worker 的 depends_on 追加 postgres（condition: service_healthy）
+#   5) 重新构建：docker compose up -d --build
+#
+# ---------- GPU 加速（worker，可选）----------
+# WhisperX + torch 需要 NVIDIA GPU。步骤：
+#   1) 宿主机安装 NVIDIA Container Toolkit（nvidia-container-toolkit）
+#   2) 用 GPU 参数重新构建共享镜像：
+#      docker compose build --build-arg INSTALL_GPU=1 api
+#      （api 与 worker 共用同一镜像；api 不受影响，仅镜像变大）
+#   3) 取消下方 worker 的 deploy.resources 注释块
+# =============================================================================
+
+# api / worker 共享的容器内环境（覆盖 .env 中的本地路径，指向容器内服务）
+x-app-env: &app-env
+  SFC_UPLOAD_DIR: /data/uploads
+  SFC_DATABASE_URL: sqlite:////data/app.db
+  SFC_CELERY_BROKER_URL: redis://redis:6379/0
+  SFC_QUEUE_BACKEND: celery
+
+services:
+  # ---- 消息队列 / 结果缓存 ----
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---- 后端 API（FastAPI :8000）----
+  api:
+    build: ./backend
+    image: sfc-backend:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      <<: *app-env
+    volumes:
+      - sfc-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---- Celery worker（与 api 共享同一镜像，仅命令不同）----
+  worker:
+    build: ./backend
+    image: sfc-backend:latest
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    env_file:
+      - .env
+    environment:
+      <<: *app-env
+    volumes:
+      - sfc-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    # ---- GPU 加速（可选；默认注释，保证无 GPU 也能一键启动）----
+    # WhisperX 需要 GPU 才实用（large-v3 在 CPU 上极慢）。启用步骤：
+    #   1) 宿主机安装 NVIDIA Container Toolkit
+    #   2) docker compose build --build-arg INSTALL_GPU=1 api（重建共享镜像）
+    #   3) 取消下面 deploy 块的注释：
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ---- 前端（nginx，SPA + /api 反代，:8080）----
+  web:
+    build: ./frontend
+    image: sfc-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # ---- PostgreSQL（公共部署时启用；默认注释，见文件头部说明）----
+  # postgres:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sfc} -d ${POSTGRES_DB:-sfc}"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+  #   # 启用后还需：
+  #   #   - 给 api / worker 的 depends_on 追加本服务（condition: service_healthy）
+  #   #   - 在 .env 中把 SFC_DATABASE_URL 改为 postgresql+psycopg://...（见头部说明）
+
+volumes:
+  # 应用数据卷（uploads + sqlite 数据库），worker 与 api 共享
+  sfc-data:
+  # postgres 数据卷（启用 postgres 服务时使用）
+  pgdata:
