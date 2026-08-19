@@ -422,3 +422,51 @@ def test_fcpxml_empty_result():
     root = ET.fromstring(export_fcpxml(make_result()))
     spine = root.find("library/event/project/sequence/spine")
     assert [c.tag for c in list(spine)] == ["asset-clip"]
+
+
+# ---------------------------------------------------------------------------
+# Render command construction (app.api.export._ffmpeg_cmd)
+# ---------------------------------------------------------------------------
+
+
+def _ffmpeg_cmd(*args, **kwargs):
+    from app.api.export import _ffmpeg_cmd as build
+
+    return build(*args, **kwargs)
+
+
+def test_webm_alpha_uses_transparent_lavfi_canvas():
+    cmd = _ffmpeg_cmd(
+        "/src/video.mp4", "/tmp/sub.ass", "/out/alpha.webm",
+        "webm_alpha", True, width=640, height=360, fps=30.0, duration=8.0,
+    )
+    assert "-f" in cmd and "lavfi" in cmd
+    assert any("color=c=black:s=640x360:r=30.0:d=8.0" in a for a in cmd)
+    assert "-i" not in cmd or "/src/video.mp4" not in cmd  # no source video input
+    assert "yuva420p" in cmd
+    assert any("ass=" in a and "colorkey=black" in a for a in cmd)
+    assert "-auto-alt-ref" in cmd and "0" in cmd
+    assert "-an" in cmd
+
+
+def test_webm_alpha_defaults_to_1080p30_when_no_meta():
+    cmd = _ffmpeg_cmd(
+        "/src/video.mp4", "/tmp/sub.ass", "/out/alpha.webm",
+        "webm_alpha", True,
+    )
+    assert any("color=c=black:s=1920x1080:r=30.0" in a for a in cmd)
+
+
+def test_webm_alpha_clamps_zero_duration():
+    cmd = _ffmpeg_cmd(
+        "/src/video.mp4", "/tmp/sub.ass", "/out/alpha.webm",
+        "webm_alpha", True, width=640, height=360, fps=30.0, duration=0.0,
+    )
+    assert any(":d=0.1" in a for a in cmd)
+
+
+def test_mp4_burn_still_uses_source_input():
+    cmd = _ffmpeg_cmd("/src/video.mp4", "/tmp/sub.ass", "/out/burned.mp4", "mp4", True)
+    assert "-i" in cmd and "/src/video.mp4" in cmd
+    assert "libx264" in cmd
+    assert "color=" not in " ".join(cmd)

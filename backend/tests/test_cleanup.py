@@ -93,3 +93,14 @@ def test_cleanup_prunes_old_usage_rows():
         assert recent[0].date == today
     finally:
         db.close()
+
+
+def test_celery_registry_includes_task_modules():
+    """Worker must know process_job / cleanup tasks (regression: KeyError
+    'app.worker.tasks.process_job' when redis queue is enabled)."""
+    import app.worker.cleanup  # noqa: F401
+    import app.worker.tasks  # noqa: F401
+    from app.worker.celery_app import celery_app
+
+    assert "app.worker.tasks.process_job" in celery_app.tasks
+    assert "app.worker.cleanup.cleanup_expired_jobs" in celery_app.tasks

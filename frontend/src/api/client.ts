@@ -36,7 +36,7 @@ export function getSessionToken(): string {
 }
 
 /** 從錯誤回應中解析 { detail }，否則回退到狀態碼訊息 */
-async function parseError(res: Response): Promise<Error> {
+export async function parseError(res: Response): Promise<Error> {
   let detail = `請求失敗（HTTP ${res.status}）`;
   try {
     const body: unknown = await res.json();
@@ -73,6 +73,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export interface HealthResponse {
   status: string;
   version: string;
+}
+
+/**
+ * 帶 X-Session-Token 的 fetch。
+ * <video> / wavesurfer 等無法自訂 header 的載入情境，需先以此取得 blob URL。
+ */
+export function fetchAuthed(input: RequestInfo | URL): Promise<Response> {
+  return fetch(input, { headers: { "X-Session-Token": getSessionToken() } });
 }
 
 export function getHealth(): Promise<HealthResponse> {
@@ -192,10 +200,19 @@ export function putSubtitles(jobId: string, segments: Segment[]): Promise<{ ok: 
   });
 }
 
+/**
+ * 將 API 路徑解析為絕對 URL：API_BASE 為絕對網址時直接使用，
+ * 相對路徑（預設 /api）則以 window.location.origin 補齊。
+ */
+function resolveApiUrl(path: string): string {
+  const base = API_BASE.startsWith("http") ? API_BASE : `${window.location.origin}${API_BASE}`;
+  const baseWithSlash = base.endsWith("/") ? base : `${base}/`;
+  return new URL(path.replace(/^\/+/, ""), baseWithSlash).toString();
+}
+
 /** 建立匯出 URL（含樣式 query 參數） */
 export function buildExportUrl(jobId: string, format: ExportFormat, style?: StyleParams): string {
-  const base = API_BASE.startsWith("http") ? API_BASE : `${window.location.origin}${API_BASE}`;
-  const url = new URL(`/jobs/${encodeURIComponent(jobId)}/export/${format}`, base);
+  const url = new URL(resolveApiUrl(`/jobs/${encodeURIComponent(jobId)}/export/${format}`));
   if (style) {
     if (style.font_size !== undefined) url.searchParams.set("font_size", String(style.font_size));
     if (style.font_color) url.searchParams.set("font_color", style.font_color);

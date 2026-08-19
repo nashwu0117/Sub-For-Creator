@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
+import { useAuthedMedia } from "../hooks/useAuthedMedia";
 import type { EditorStyle, Job, Segment } from "../types";
 import Player, { type PlayerHandle } from "../components/Player";
 import SubtitlePreview from "../components/SubtitlePreview";
@@ -34,9 +35,15 @@ export default function Editor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
+  /** 輪詢期間的暫時性錯誤（如網路抖動），不中斷編輯器 */
+  const [pollNote, setPollNote] = useState<string | null>(null);
   const playerRef = useRef<PlayerHandle>(null);
   const waveformRef = useRef<WaveformHandle>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  // 作業完成後才以帶 session token 的 fetch 下載媒體（<video>/wavesurfer 無法自訂 header）
+  const media = useAuthedMedia(job && job.status === "done" && jobId ? getMediaUrl(jobId) : null);
+  const audio = useAuthedMedia(job && job.status === "done" && jobId ? getAudioUrl(jobId) : null);
 
   const showToast = useCallback((message: string, kind: ToastKind = "ok") => {
     setToast({ message, kind });
@@ -94,8 +101,9 @@ export default function Editor() {
     }
   }, [polledJob, loadSubtitles]);
 
+  // 輪詢失敗僅提示（作業可能仍在處理）；下一次成功即清除
   useEffect(() => {
-    if (pollError) setLoadError(pollError.message);
+    setPollNote(pollError ? pollError.message : null);
   }, [pollError]);
 
   useEffect(() => {
@@ -187,6 +195,11 @@ export default function Editor() {
         {job ? (
           <>
             <JobStatusCard job={job} />
+            {pollNote && (
+              <div className="error-box" role="alert">
+                <span>狀態更新暫時失敗：{pollNote}</span>
+              </div>
+            )}
             <p className="editor-state-sub">字幕產生完成後將自動載入編輯器…</p>
           </>
         ) : (
@@ -220,7 +233,8 @@ export default function Editor() {
           <div className="player-wrap">
             <Player
               ref={playerRef}
-              src={getMediaUrl(jobId)}
+              src={media.url}
+              error={media.error}
               onTimeUpdate={setCurrentTime}
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
@@ -229,7 +243,7 @@ export default function Editor() {
           </div>
           <WaveformTimeline
             ref={waveformRef}
-            audioUrl={getAudioUrl(jobId)}
+            audioUrl={audio.url}
             segments={segments}
             currentTime={currentTime}
             onTimeChange={setCurrentTime}

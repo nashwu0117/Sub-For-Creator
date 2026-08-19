@@ -42,7 +42,7 @@ multipart/form-data：
 |---|---|
 | `file` | 影片或音檔（必填） |
 | `language` | 語言代碼，`auto` 或省略 = 自動偵測 |
-| `options` | JSON 字串：`{ "model_size": "large-v3", "max_line_chars": 16, "punctuation_threshold": 0.35 }`（可省略，用預設） |
+| `options` | JSON 字串：`{ "model_size": "large-v3", "max_line_chars": 16 }`（可省略，用預設） |
 
 伺服器驗證：檔案大小 ≤ `MAX_UPLOAD_MB`、ffprobe 時長 ≤ `MAX_DURATION_MIN`、session 每日上傳秒數額度、佇列長度 ≤ `MAX_QUEUE`。
 
@@ -88,14 +88,49 @@ multipart/form-data：
 Body：`{ "segments": [ { "id", "start", "end", "text" } ] }`（可省略 words，或保留）。
 回傳 `200 { "ok": true }`。
 
+### `GET /api/jobs/{job_id}/media` — 串流原始影片/音檔
+
+播放器用；`Content-Disposition: inline`。作業不存在回 `404`；已過期回 `410`。
+
+### `GET /api/jobs/{job_id}/audio` — 串流抽取的音軌
+
+16kHz mono WAV（`audio/wav`，`Content-Disposition: inline`）。音軌尚未產生（作業未到 transcribing 階段）回 `404`。
+
 ### `GET /api/jobs/{job_id}/export/{format}` — 匯出
 
 `format` ∈ `srt | vtt | txt | ass | fcpxml | mp4 | webm_alpha`
 
 - 文字類（srt/vtt/txt/ass/fcpxml）：`Content-Type: text/plain; charset=utf-8`，`Content-Disposition: attachment; filename="..."`
 - `mp4`：燒錄字幕的 H.264 MP4（`video/mp4`）；`webm_alpha`：透明背景 VP9 webm（`video/webm`）
-- 作業須為 `done`，否則 `409`；轉檔類作業若先前未產生，會觸發背景 render（response 可能為 `202 { "job_id", "status": "processing" }`，前端需輪詢，完成後改以 `200` 回傳檔案；以 `X-Render-State: ready` header 區分）。**簡化決策：render 同步等待**，render 逾時 300s 回 `504`。
-- query params（ass/mp4/webm_alpha 適用）：`font_size=64`、`font_color=#FFFFFF`、`outline_color=#000000`、`font_family=`、`karaoke=0|1`、`position=bottom|top`
+- 作業須為 `done`，否則 `409`；render 為同步執行（每次請求皆等待完成），render 逾時 300s 回 `504`。
+- query params：`font_size=64`、`font_color=#FFFFFF`、`outline_color=#000000`、`font_family=`、`karaoke=0|1`、`position=bottom|top`（ass/mp4/webm_alpha 適用）；`include_punctuation=true|false`（txt 適用）
+
+### `GET /api/fonts` — 列出已上傳的自訂字型
+
+```
+200 { "fonts": [ { "name": "NotoSansSC", "filename": "NotoSansSC.ttf", "size": 123456, "uploaded_at": "ISO8601" } ] }
+```
+
+### `POST /api/fonts` — 上傳自訂字型（燒錄用）
+
+multipart/form-data：`file`（.ttf / .otf，必填）。上限 `SFC_MAX_FONT_MB`（預設 20 MB）。
+
+成功：`201 { "name": "...", "filename": "...", "size": 123456 }`
+失敗：`400`（非 .ttf/.otf）、`413`（超過大小上限）、`422`（空檔案）
+
+### 錯誤碼總表
+
+| 狀態碼 | 情境 |
+|---|---|
+| 400 | 缺少/過長 `X-Session-Token`、格式不支援、媒體無法解析、時長超過上限 |
+| 404 | 作業不存在、media/audio 檔案不存在 |
+| 409 | 作業尚未完成（`require_done`） |
+| 410 | 作業 TTL 已到期 |
+| 413 | 檔案超過 `SFC_MAX_UPLOAD_MB` / 字型超過 `SFC_MAX_FONT_MB` |
+| 422 | 不支援的語言、options JSON 無效、空檔案、無效匯出格式/參數、字幕片段驗證失敗 |
+| 429 | 額度/限流/佇列滿（附 `retry_after_seconds`） |
+| 500 | 匯出或 ASR 內部錯誤 |
+| 504 | render 逾時或 ffmpeg 失敗 |
 
 ### 限流 (429)
 
@@ -105,7 +140,7 @@ Body：`{ "segments": [ { "id", "start", "end", "text" } ] }`（可省略 words�
 | 單檔時長 | 60 min | `SFC_MAX_DURATION_MIN` |
 | session 每日上傳秒數 | 3600 s | `SFC_DAILY_SECONDS_PER_SESSION` |
 | 最大佇列長度 | 50 | `SFC_MAX_QUEUE` |
-| 同時處理任務數 | 2 | `SFC_MAX_CONCURRENT`（worker 端 semaphore） |
+| 同時處理任務數 | 2 | `SFC_MAX_CONCURRENT`（inline 佇列執行緒池大小；celery 模式由 worker `--concurrency` 控制） |
 | 檔案 TTL | 48 h | `SFC_TTL_HOURS` |
 | 上傳頻率 | 60 s 內最多 5 次 | `SFC_UPLOAD_RATE_LIMIT` |
 
@@ -121,17 +156,18 @@ done → (TTL 到期) → 410
 
 ## 資料模型（後端）
 
-`jobs` 表：`id (uuid str, pk)`、`session_token`、`status`、`stage`、`progress`、`queue_position`（queued 時）、`error`、`filename`、`language`、`model_size`、`duration`、`created_at`、`completed_at`、`expires_at`、`segments_json`（完成後的完整字幕資料，含 words）。
+`jobs` 表：`id (uuid str, pk)`、`session_token`、`status`、`stage`、`progress`、`error`、`filename`、`language`、`model_size`、`duration`、`created_at`、`completed_at`、`expires_at`、`segments_json`（完成後的完整字幕資料，含 words）。`queue_position` 不落庫，由 API 依 active 作業即時計算。
 
 `usage` 表（限流用）：`session_token`、`date`、`uploaded_seconds`（upsert）。
 
 ## 儲存佈局
 
-- 上傳原始檔：`{UPLOAD_DIR or S3}/{job_id}/source.<ext>`
-- 抽出的音軌：`{...}/{job_id}/audio.wav`（16kHz mono）
+- 上傳原始檔：`{UPLOAD_DIR or S3}/jobs/{job_id}/source.<ext>`
+- 抽出的音軌：`{...}/jobs/{job_id}/audio.wav`（16kHz mono）
 - 字幕 JSON：存 DB `segments_json`（不再單獨寫檔，避免一致性問題）
-- render 產物：`{...}/{job_id}/burned.mp4`、`{...}/{job_id}/alpha.webm`
-- 清理：Celery beat 每日一次刪除 `expires_at < now` 的整個 job 目錄 + DB 列
+- render 產物：`{...}/jobs/{job_id}/burned.mp4`、`{...}/jobs/{job_id}/alpha.webm`
+- 自訂字型：`{...}/fonts/<name>.<ext>`
+- 清理：Celery beat 每 6 小時執行一次（celery 模式；inline 模式由 API 進程內定時迴圈負責），刪除 `expires_at < now` 的整個 job 目錄 + DB 列
 
 ## 前端路由
 

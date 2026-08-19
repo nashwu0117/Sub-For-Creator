@@ -33,7 +33,8 @@ export default function SubtitlePreview({ segments, currentTime, style }: Props)
   }, [segments, currentTime]);
 
   const shadow = useMemo(() => outlineShadow(style), [style]);
-  const useKaraoke = style.karaoke && (active?.words?.length ?? 0) > 0;
+  const words = active?.words;
+  const activeWords = active && style.karaoke && words && words.length > 0 ? words : null;
 
   return (
     <div className={`subtitle-preview ${style.position === "top" ? "is-top" : "is-bottom"}`} aria-hidden="true">
@@ -47,8 +48,8 @@ export default function SubtitlePreview({ segments, currentTime, style }: Props)
             textShadow: shadow,
           }}
         >
-          {useKaraoke
-            ? active.words!.map((w, i) => (
+          {activeWords
+            ? activeWords.map((w, i) => (
                 <span key={i} className={w.start <= currentTime ? "word-done" : "word-pending"}>
                   {w.text}{" "}
                 </span>

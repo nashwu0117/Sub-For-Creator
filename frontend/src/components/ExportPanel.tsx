@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { buildExportUrl, fetchExportBlob } from "../api/client";
+import { fetchExportBlob } from "../api/client";
 import type { EditorStyle, ExportFormat, StyleParams } from "../types";
 
 interface Props {
@@ -20,27 +20,30 @@ function styleToParams(style: EditorStyle): StyleParams {
   };
 }
 
-const TEXT_FORMATS: { format: ExportFormat; label: string; tag: string }[] = [
-  { format: "srt", label: "SRT", tag: "字幕檔" },
-  { format: "vtt", label: "VTT", tag: "網頁字幕" },
-  { format: "txt", label: "純文字", tag: "TXT" },
-  { format: "ass", label: "ASS", tag: "進階字幕" },
-  { format: "fcpxml", label: "FCPXML", tag: "Final Cut" },
-];
-
-const RENDER_FORMATS: { format: ExportFormat; label: string; tag: string; filename: string }[] = [
-  { format: "mp4", label: "MP4", tag: "燒錄字幕", filename: "subtitle.mp4" },
-  { format: "webm_alpha", label: "WebM", tag: "透明背景", filename: "subtitle-alpha.webm" },
+const FORMATS: {
+  format: ExportFormat;
+  label: string;
+  tag: string;
+  filename: string;
+  render: boolean;
+}[] = [
+  { format: "srt", label: "SRT", tag: "字幕檔", filename: "subtitle.srt", render: false },
+  { format: "vtt", label: "VTT", tag: "網頁字幕", filename: "subtitle.vtt", render: false },
+  { format: "txt", label: "TXT", tag: "純文字", filename: "subtitle.txt", render: false },
+  { format: "ass", label: "ASS", tag: "進階字幕", filename: "subtitle.ass", render: false },
+  { format: "fcpxml", label: "FCPXML", tag: "Final Cut", filename: "subtitle.fcpxml", render: false },
+  { format: "mp4", label: "MP4", tag: "燒錄字幕", filename: "subtitle.mp4", render: true },
+  { format: "webm_alpha", label: "WebM", tag: "透明背景", filename: "subtitle-alpha.webm", render: true },
 ];
 
 export default function ExportPanel({ jobId, style, onToast }: Props) {
-  const [rendering, setRendering] = useState<ExportFormat | null>(null);
+  const [busy, setBusy] = useState<ExportFormat | null>(null);
 
-  const handleRenderDownload = async (format: ExportFormat, filename: string) => {
-    if (rendering) return;
-    setRendering(format);
+  const handleDownload = async (format: ExportFormat, filename: string) => {
+    if (busy) return;
+    setBusy(format);
     try {
-      // 轉檔類可能需等待背景渲染（最長 300 秒），用 fetch 取得 blob 並下載
+      // 所有格式都經 fetch（帶 session header）→ blob，避免 <a download> 無法帶 header 而 400
       const blobUrl = await fetchExportBlob(jobId, format, styleToParams(style));
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -49,11 +52,11 @@ export default function ExportPanel({ jobId, style, onToast }: Props) {
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
-      onToast("匯出完成，開始下載");
+      onToast(format === "mp4" || format === "webm_alpha" ? "渲染完成，開始下載" : "匯出完成，開始下載");
     } catch (e) {
       onToast(e instanceof Error ? e.message : "匯出失敗", "error");
     } finally {
-      setRendering(null);
+      setBusy(null);
     }
   };
 
@@ -61,35 +64,25 @@ export default function ExportPanel({ jobId, style, onToast }: Props) {
     <div className="card">
       <h2 className="card-title">匯出</h2>
       <div className="export-grid">
-        {TEXT_FORMATS.map(({ format, label, tag }) => (
-          <a
-            key={format}
-            className="export-btn"
-            href={buildExportUrl(jobId, format, styleToParams(style))}
-            download
-          >
-            <span className="export-format">{format === "txt" ? "TXT" : format.toUpperCase()}</span>
-            <span>{format === "txt" ? "純文字" : label}</span>
-            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{tag}</span>
-          </a>
-        ))}
-        {RENDER_FORMATS.map(({ format, label, tag, filename }) => (
+        {FORMATS.map(({ format, label, tag, filename, render }) => (
           <button
             key={format}
-            className={`export-btn render${rendering === format ? " disabled" : ""}`}
-            disabled={rendering !== null}
-            onClick={() => void handleRenderDownload(format, filename)}
+            className={`export-btn${render ? " render" : ""}${busy === format ? " disabled" : ""}`}
+            disabled={busy !== null}
+            onClick={() => void handleDownload(format, filename)}
           >
-            {rendering === format ? (
+            {busy === format ? (
               <>
                 <span className="spinner" aria-hidden="true" />
-                渲染中…
+                {render ? "渲染中…" : "下載中…"}
               </>
             ) : (
               <>
-                <span className="export-format">{format === "mp4" ? "MP4" : "WEBM"}</span>
+                <span className="export-format">
+                  {format === "mp4" ? "MP4" : format === "webm_alpha" ? "WEBM" : format.toUpperCase()}
+                </span>
                 <span>{label}</span>
-                <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{tag}</span>
+                <span className="export-tag">{tag}</span>
               </>
             )}
           </button>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getConfig, getJob } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
-import type { AppConfig, Job, JobStatus, RecentJob } from "../types";
+import type { AppConfig, CreateJobResponse, Job, JobStatus, RecentJob } from "../types";
 import UploadZone from "../components/UploadZone";
 import JobStatusCard from "../components/JobStatusCard";
 
@@ -59,6 +59,8 @@ export default function Home() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
+  const [activeEta, setActiveEta] = useState<number | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>(loadRecentJobs);
   const navigateTimerRef = useRef<number | null>(null);
 
@@ -71,11 +73,16 @@ export default function Home() {
   // 監看中的作業：queued / processing 時每 2 秒輪詢
   const watching =
     activeJob !== null && (activeJob.status === "queued" || activeJob.status === "processing");
-  const { data: polledJob } = usePolling(
+  const { data: polledJob, error: polledError } = usePolling(
     () => getJob(activeJob!.job_id),
     POLL_INTERVAL,
     watching,
   );
+
+  // 輪詢失敗（如作業 410 過期或暫時斷線）→ 顯示訊息；下次成功自動清除
+  useEffect(() => {
+    setPollError(polledError ? polledError.message : null);
+  }, [polledError]);
 
   const updateRecentStatus = useCallback((jobId: string, status: JobStatus) => {
     setRecentJobs((prev) => {
@@ -104,7 +111,8 @@ export default function Home() {
     };
   }, []);
 
-  const handleJobCreated = useCallback((jobId: string, filename: string) => {
+  const handleJobCreated = useCallback((res: CreateJobResponse, filename: string) => {
+    const jobId = res.job_id;
     const entry: RecentJob = {
       job_id: jobId,
       filename,
@@ -116,6 +124,7 @@ export default function Home() {
       saveRecentJobs(next);
       return next;
     });
+    setActiveEta(res.eta_seconds);
     // 立即以 queued 狀態顯示狀態卡（輪詢會接手更新）
     setActiveJob({
       job_id: jobId,
@@ -137,6 +146,8 @@ export default function Home() {
         return;
       }
       // 恢復輪詢：以最近一次已知狀態顯示，輪詢立即接手
+      setPollError(null);
+      setActiveEta(null);
       setActiveJob({
         job_id: job.job_id,
         status: job.status,
@@ -191,12 +202,24 @@ export default function Home() {
       <UploadZone config={config} onJobCreated={handleJobCreated} />
 
       {activeJob && (
-        <JobStatusCard
-          job={activeJob}
-          onRetry={() => {
-            setActiveJob(null);
-          }}
-        />
+        <>
+          <JobStatusCard
+            job={activeJob}
+            etaSeconds={activeEta}
+            onRetry={() => {
+              setActiveJob(null);
+              setPollError(null);
+            }}
+          />
+          {pollError && (
+            <div className="error-box" role="alert">
+              <span>狀態更新失敗：{pollError}（作業可能已過期，或請稍後重試）</span>
+              <button className="btn btn-sm btn-danger" onClick={() => setPollError(null)}>
+                關閉
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {recentJobs.length > 0 && (

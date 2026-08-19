@@ -33,8 +33,8 @@ export interface Job {
   progress: number;
   queue_position: number | null;
   error: string | null;
-  created_at: string;
-  expires_at: string;
+  created_at: string | null;
+  expires_at: string | null;
   meta: JobMeta;
 }
 
@@ -62,7 +62,8 @@ export interface CreateJobResponse {
 /** 字幕資料（GET /api/jobs/{id}/subtitles） */
 export interface SubtitlesResponse {
   job_id: string;
-  language: string;
+  /** 自動偵測失敗時後端可能回傳 null */
+  language: string | null;
   segments: Segment[];
   meta: {
     model_size: string;

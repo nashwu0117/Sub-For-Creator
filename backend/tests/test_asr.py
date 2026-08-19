@@ -55,6 +55,12 @@ def test_whisperx_model_size_from_env(monkeypatch):
     assert WhisperXBackend("small").model_size == "small"
 
 
+def test_faster_whisper_model_size_from_env(monkeypatch):
+    monkeypatch.setenv("SFC_WHISPER_MODEL", "base")
+    assert FasterWhisperBackend().model_size == "base"
+    assert FasterWhisperBackend("small").model_size == "small"
+
+
 def test_asr_backend_is_protocol():
     # a mock instance structurally satisfies the protocol
     backend: ASRBackend = MockBackend()

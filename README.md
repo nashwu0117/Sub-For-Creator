@@ -30,7 +30,7 @@ flowchart LR
     W --> E[匯出器 SRT / VTT / ASS / FCPXML]
     W --> FF[FFmpeg 燒錄 MP4 / 透明背景 WebM]
     W --> ST[(儲存 本機磁碟或 S3)]
-    ST --> C[Celery Beat 每日清理過期檔案]
+    ST --> C[Celery Beat 定期清理過期檔案（每 6 小時）]
     F -->|輪詢作業狀態| A
 ```
 
@@ -84,12 +84,12 @@ GPU 主機注意事項：WhisperX 需要 CUDA。請在 `docker-compose.yml` 取�
 
 ### C. 本地開發
 
-後端（需要 Redis）：
+後端（需要 Redis；以下命令需在 `backend/` 目錄下執行）：
 
 ```bash
 uvicorn app.main:app --reload --port 8000        # API 伺服器
-celery -A app.worker worker --loglevel=info      # 處理佇列
-celery -A app.worker beat --loglevel=info        # 每日清理排程
+celery -A app.worker.celery_app worker --loglevel=info      # 處理佇列
+celery -A app.worker.celery_app beat --loglevel=info        # 定期清理排程
 ```
 
 前端：
@@ -104,9 +104,10 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 
 | 指令 | 說明 |
 |---|---|
-| `make dev` | 啟動後端 API（uvicorn，reload） |
+| `make install` | 安裝後端依賴（含 pytest/ruff 開發依賴） |
+| `make api` | 啟動後端 API（uvicorn，reload） |
 | `make worker` | 啟動 Celery worker |
-| `make frontend` | 啟動前端 dev server |
+| `make web` | 啟動前端 dev server |
 | `make test` | 執行後端測試（pytest） |
 | `make lint` | 執行 ruff 檢查 |
 
@@ -144,7 +145,11 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 | GET | `/api/jobs/{job_id}` | 查詢作業狀態與進度 |
 | GET | `/api/jobs/{job_id}/subtitles` | 取得字幕資料（含逐字時間戳） |
 | PUT | `/api/jobs/{job_id}/subtitles` | 儲存編輯後的字幕 |
+| GET | `/api/jobs/{job_id}/media` | 串流原始影片/音檔（播放器用） |
+| GET | `/api/jobs/{job_id}/audio` | 串流抽取的 16kHz 音軌 |
 | GET | `/api/jobs/{job_id}/export/{format}` | 匯出 `srt` / `vtt` / `txt` / `ass` / `fcpxml` / `mp4` / `webm_alpha` |
+| GET | `/api/fonts` | 列出已上傳的自訂字型 |
+| POST | `/api/fonts` | 上傳自訂字型（.ttf / .otf，燒錄用） |
 
 所有請求以 `X-Session-Token` header 識別匿名 session。完整契約見 [docs/API.md](docs/API.md)。
 
@@ -197,7 +202,7 @@ v1 已完成：
 
 1. 先開 issue 討論你想做的功能或修正，避免重工。
 2. Fork 本專案，在 feature branch 上開發。
-3. 補上測試（後端為 pytest，前端為 Vitest）。
+3. 補上測試（後端為 pytest；前端測試框架尚未引入，規劃中）。
 4. 送出 Pull Request，通過 CI 後合併。
 
 ## 授權

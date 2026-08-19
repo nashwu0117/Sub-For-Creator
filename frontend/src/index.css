@@ -13,7 +13,7 @@
   --border-strong: #333a4a;
   --text: #e8eaf0;
   --text-dim: #9aa3b2;
-  --text-faint: #6b7280;
+  --text-faint: #7a8494;
 
   --accent-1: #6d5ef2;
   --accent-2: #38bdf8;
@@ -737,6 +737,11 @@ textarea {
   transform: scale(1.01);
 }
 
+.upload-zone:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
 .upload-zone-icon {
   width: 56px;
   height: 56px;
@@ -1008,6 +1013,12 @@ textarea {
   background: var(--surface-2);
 }
 
+.recent-item:focus-visible {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px var(--accent-soft-2);
+}
+
 .recent-item .recent-name {
   flex: 1;
   font-size: 14px;
@@ -1107,6 +1118,39 @@ textarea {
   background: #000;
 }
 
+/* 影片載入 / 錯誤疊層 */
+.player-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: #000;
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: var(--space-4);
+  z-index: 5;
+}
+
+.player-overlay .spinner {
+  width: 26px;
+  height: 26px;
+}
+
+.player-overlay-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.player-overlay-sub {
+  max-width: 90%;
+  overflow-wrap: anywhere;
+}
+
 /* 字幕預覽疊層 */
 .subtitle-preview {
   position: absolute;
@@ -1157,7 +1201,7 @@ textarea {
   min-height: 72px;
 }
 
-.waveform-container :deep(.wavesurfer-region) {
+.waveform-container .wavesurfer-region {
   cursor: pointer;
 }
 
@@ -1227,6 +1271,12 @@ textarea {
   box-shadow: 0 0 0 1px var(--accent-1);
 }
 
+.subtitle-item:focus-visible {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px var(--accent-soft-2);
+}
+
 .subtitle-item-top {
   display: flex;
   align-items: center;
@@ -1290,6 +1340,13 @@ textarea {
   color: var(--text);
   border-color: var(--border-strong);
   background: var(--surface-3);
+}
+
+.nudge-btn:focus-visible,
+.subtitle-delete:focus-visible,
+.file-chip .file-clear:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
 }
 
 .subtitle-delete {
@@ -1517,6 +1574,11 @@ textarea {
   transform: translateY(1px);
 }
 
+.export-btn:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
 .export-btn:disabled {
   opacity: 0.6;
   cursor: wait;
@@ -1527,6 +1589,11 @@ textarea {
   font-size: 11px;
   color: var(--accent-2);
   font-weight: 700;
+}
+
+.export-btn .export-tag {
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 .export-btn.render {
@@ -1705,6 +1772,14 @@ textarea {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-2);
+  }
+
+  .subtitle-item-top {
+    flex-wrap: wrap;
+  }
+
+  .subtitle-time-inputs {
+    flex: 1 1 auto;
   }
 }
 

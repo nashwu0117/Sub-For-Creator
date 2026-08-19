@@ -25,6 +25,7 @@ FROM python:3.11-slim
 # 安装 ffmpeg（音频提取 / ASR 预处理必需）
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
+        fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

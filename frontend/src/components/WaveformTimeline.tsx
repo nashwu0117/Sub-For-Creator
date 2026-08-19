@@ -10,7 +10,8 @@ export interface WaveformHandle {
 }
 
 interface Props {
-  audioUrl: string;
+  /** 已帶 session token 下載完成的 blob URL；null 表示尚未就緒 */
+  audioUrl: string | null;
   segments: Segment[];
   currentTime: number;
   onTimeChange: (time: number) => void;
@@ -90,7 +91,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
   // 建立 wavesurfer 實例（僅依 audioUrl 重建）
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !audioUrl) return;
     let cancelled = false;
     let ws: WaveSurfer | null = null;
 
@@ -224,7 +225,11 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
   return (
     <div className="waveform-card">
       <div className="card-title">時間軸 — 拖曳片段邊緣可調整時間</div>
-      <div className="waveform-container" ref={containerRef} />
+      {audioUrl ? (
+        <div className="waveform-container" ref={containerRef} />
+      ) : (
+        <div className="waveform-empty">正在載入音軌…</div>
+      )}
     </div>
   );
 });

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_not_expired, get_job_or_404, require_done, session_token
 from app.config import Settings, get_settings
+from app.core import MediaProcessingError, probe_media
 from app.core.exceptions import RenderError
 from app.core.models import TranscriptionResult
 from app.database import get_db
@@ -117,7 +118,7 @@ def _export_text(job: Job, fmt: str, settings: Settings, **params) -> Response:
         return _text_response(
             export_ass(result, style=style, karaoke=params["karaoke"]), f"{stem}.ass"
         )
-    return _text_response(export_fcpxml(result), f"{stem}.fcpxml")
+    return _text_response(export_fcpxml(result, media_name=stem), f"{stem}.fcpxml")
 
 
 def _has_audio(path: str) -> bool:
@@ -145,18 +146,75 @@ def _has_audio(path: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
-def _ffmpeg_cmd(source: str, ass_path: str, out: str, fmt: str, has_audio: bool) -> list[str]:
+def _probe_fps(path: str) -> float:
+    """Read the source video frame rate via ffprobe; 0.0 when unavailable."""
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0", path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        num, _, den = proc.stdout.strip().split("/")
+        fps = float(num) / float(den) if float(den) else 0.0
+        return fps if 1.0 <= fps <= 240.0 else 0.0
+    except (OSError, subprocess.TimeoutExpired, ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def _probe_video_meta(path: str) -> tuple[int, int, float]:
+    """Probe source video dimensions and frame rate for the transparent render.
+
+    Falls back to 1920x1080@30 when probing fails (e.g. audio-only source).
+    """
+    width, height, fps = 1920, 1080, 30.0
+    try:
+        info = probe_media(path)
+        if info.get("width") and info.get("height"):
+            width, height = info["width"], info["height"]
+    except MediaProcessingError:
+        pass
+    return width, height, _probe_fps(path) or fps
+
+
+def _ffmpeg_cmd(
+    source: str,
+    ass_path: str,
+    out: str,
+    fmt: str,
+    has_audio: bool,
+    width: int = 1920,
+    height: int = 1080,
+    fps: float = 30.0,
+    duration: float = 0.0,
+) -> list[str]:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RenderError("ffmpeg not available")
     escaped = ass_path.replace("\\", "\\\\").replace(":", "\\:")
-    cmd = [ffmpeg, "-y", "-i", source, "-vf", f"ass={escaped}"]
     if fmt == "mp4":
+        cmd = [ffmpeg, "-y", "-i", source, "-vf", f"ass={escaped}"]
         cmd += ["-c:v", "libx264", "-crf", "20", "-preset", "medium"]
         cmd += ["-c:a", "copy"] if has_audio else ["-an"]
         cmd += ["-movflags", "+faststart"]
-    else:  # webm_alpha
-        cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30", "-an"]
+    else:  # webm_alpha — subtitles on a fully transparent canvas, no source video
+        # Verified on ffmpeg 6.1 + libvpx 1.14: the `color` source ignores
+        # alpha syntax (black@0.0 is opaque) and the ass filter passes the
+        # input alpha through untouched instead of painting subtitle alpha,
+        # so the solid black canvas is rendered first and the black backdrop
+        # is then keyed out with colorkey. libvpx-vp9 stores alpha as a
+        # second stream only when -auto-alt-ref 0 is set (VP9-alpha WebM).
+        cmd = [
+            ffmpeg, "-y", "-f", "lavfi", "-i",
+            f"color=c=black:s={width}x{height}:r={fps}:d={max(0.1, duration)}",
+            "-vf",
+            f"ass={escaped},format=rgba,colorkey=black:0.15:0.0,format=yuva420p",
+            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+            "-auto-alt-ref", "0", "-b:v", "0", "-crf", "30", "-an",
+        ]
     cmd.append(out)
     return cmd
 
@@ -202,7 +260,16 @@ def _render(job: Job, fmt: str, settings: Settings, **params) -> FileResponse:
             ext = os.path.splitext(job.filename)[1].lower() or ".bin"
             source = storage.open_path(source_key(job.id, ext))
             out = storage.writable_path(key)
-            cmd = _ffmpeg_cmd(source, ass_path, out, fmt, _has_audio(source))
+            if fmt == "webm_alpha":
+                width, height, fps = _probe_video_meta(source)
+                duration = job.duration or 0.0
+            else:
+                width = height = 1920
+                fps, duration = 30.0, 0.0
+            cmd = _ffmpeg_cmd(
+                source, ass_path, out, fmt, _has_audio(source),
+                width=width, height=height, fps=fps, duration=duration,
+            )
             try:
                 proc = subprocess.run(
                     cmd,

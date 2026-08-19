@@ -20,7 +20,12 @@ frontend/.vite/
 # Runtime data
 data/
 uploads/
-storage/
+/storage/
+backend/storage/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Editor/OS
 .DS_Store

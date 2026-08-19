@@ -7,13 +7,18 @@ export interface PlayerHandle {
 }
 
 interface Props {
-  src: string;
+  /** 已帶 session token 下載完成的 blob URL；null 表示尚未就緒 */
+  src: string | null;
+  error: string | null;
   onTimeUpdate: (time: number) => void;
   onPlay: () => void;
   onPause: () => void;
 }
 
-const Player = forwardRef<PlayerHandle, Props>(function Player({ src, onTimeUpdate, onPlay, onPause }, ref) {
+const Player = forwardRef<PlayerHandle, Props>(function Player(
+  { src, error, onTimeUpdate, onPlay, onPause },
+  ref,
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useImperativeHandle(
@@ -33,18 +38,36 @@ const Player = forwardRef<PlayerHandle, Props>(function Player({ src, onTimeUpda
     [],
   );
 
+  if (error) {
+    return (
+      <div className="player-overlay" role="alert">
+        <div className="player-overlay-title">無法載入影片</div>
+        <div className="player-overlay-sub">{error}</div>
+      </div>
+    );
+  }
+
   return (
-    <video
-      ref={videoRef}
-      className="player-video"
-      src={src}
-      controls
-      playsInline
-      preload="metadata"
-      onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
-      onPlay={onPlay}
-      onPause={onPause}
-    />
+    <>
+      {src ? (
+        <video
+          ref={videoRef}
+          className="player-video"
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          onTimeUpdate={(e) => onTimeUpdate(e.currentTarget.currentTime)}
+          onPlay={onPlay}
+          onPause={onPause}
+        />
+      ) : (
+        <div className="player-overlay" aria-live="polite">
+          <span className="spinner spinner-dark" aria-hidden="true" />
+          <div className="player-overlay-sub">正在載入影片…</div>
+        </div>
+      )}
+    </>
   );
 });
 

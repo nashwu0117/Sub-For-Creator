@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import { createJob } from "../api/client";
-import type { AppConfig } from "../types";
+import type { AppConfig, CreateJobResponse } from "../types";
 
 interface Props {
   config: AppConfig | null;
-  onJobCreated: (jobId: string, filename: string) => void;
+  onJobCreated: (res: CreateJobResponse, filename: string) => void;
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -85,8 +85,18 @@ export default function UploadZone({ config, onJobCreated }: Props) {
     setError(null);
     setProgress(0);
     try {
-      const job = await createJob(file, language, undefined, setProgress);
-      onJobCreated(job.job_id, file.name);
+      const job = await createJob(
+        file,
+        language,
+        config
+          ? {
+              model_size: config.default_options.model_size,
+              max_line_chars: config.default_options.max_line_chars,
+            }
+          : undefined,
+        setProgress,
+      );
+      onJobCreated(job, file.name);
       setFile(null);
       setProgress(0);
     } catch (e) {

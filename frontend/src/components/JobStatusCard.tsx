@@ -2,6 +2,8 @@ import type { Job, JobStage } from "../types";
 
 interface Props {
   job: Job;
+  /** 建立作業時的回傳預估等待秒數（僅 queued 時顯示） */
+  etaSeconds?: number | null;
   onRetry?: () => void;
 }
 
@@ -11,7 +13,13 @@ const STAGE_LABELS: Record<Exclude<JobStage, null>, string> = {
   segmenting: "斷句",
 };
 
-export default function JobStatusCard({ job, onRetry }: Props) {
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} 秒`;
+  const min = Math.round(seconds / 60);
+  return `約 ${min} 分鐘`;
+}
+
+export default function JobStatusCard({ job, etaSeconds, onRetry }: Props) {
   const { status, stage, progress, queue_position, error, meta } = job;
   const filename = meta.filename ?? job.job_id;
 
@@ -40,6 +48,9 @@ export default function JobStatusCard({ job, onRetry }: Props) {
             {queue_position !== null && queue_position > 0
               ? `目前排隊第 ${queue_position} 位`
               : "等待處理中…"}
+            {etaSeconds !== null && etaSeconds !== undefined && etaSeconds > 0 && (
+              <span className="job-stage-sub">（預估等待 {formatEta(etaSeconds)}）</span>
+            )}
           </div>
         )}
 

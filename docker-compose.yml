@@ -2,7 +2,7 @@
 # Sub-For-Creator 部署编排（docker compose，无需 version 字段）
 #
 # 服务：redis（消息队列） / api（FastAPI :8000） / worker（Celery）
-#       / web（nginx :8080） + 可选 postgres（默认注释，见下）
+#       / beat（Celery 定時清理排程） / web（nginx :8080） + 可选 postgres（默认注释，见下）
 #
 # 快速开始：
 #   cp .env.example .env
@@ -80,6 +80,8 @@ services:
       - .env
     environment:
       <<: *app-env
+      SFC_ASR_BACKEND: faster-whisper
+      SFC_WHISPER_MODEL: small
     volumes:
       - sfc-data:/data
     depends_on:
@@ -97,6 +99,21 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+
+  # ---- Celery beat（TTL 清理排程；celery 队列模式下过期文件清理依赖本服务）----
+  beat:
+    image: sfc-backend:latest
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    env_file:
+      - .env
+    environment:
+      <<: *app-env
+    volumes:
+      - sfc-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # ---- 前端（nginx，SPA + /api 反代，:8080）----
   web:

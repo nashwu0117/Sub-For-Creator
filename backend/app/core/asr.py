@@ -141,8 +141,8 @@ class WhisperXBackend:
 class FasterWhisperBackend:
     """faster-whisper transcription backend (lazy import)."""
 
-    def __init__(self, model_size: str = "large-v3"):
-        self.model_size = model_size
+    def __init__(self, model_size: str | None = None):
+        self.model_size = model_size or os.environ.get("SFC_WHISPER_MODEL") or "large-v3"
 
     def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptionResult:
         try:

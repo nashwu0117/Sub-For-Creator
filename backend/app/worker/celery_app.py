@@ -7,7 +7,11 @@ from celery.schedules import crontab
 
 from app.config import get_settings
 
-celery_app = Celery("sfc", broker=get_settings().celery_broker_url)
+celery_app = Celery(
+    "sfc",
+    broker=get_settings().celery_broker_url,
+    include=["app.worker.tasks", "app.worker.cleanup"],
+)
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
