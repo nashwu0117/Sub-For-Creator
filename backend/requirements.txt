@@ -13,6 +13,10 @@ SQLAlchemy>=2.0,<3
 # --- ASR (CPU-capable; WhisperX itself lives in requirements-gpu.txt) ---
 faster-whisper>=1.0
 
+# --- ASR accuracy: spectral-gating denoising (denoise_enabled) ---
+noisereduce>=3.0
+scipy>=1.10
+
 # --- Storage (S3/R2, optional but included) ---
 boto3>=1.34
 

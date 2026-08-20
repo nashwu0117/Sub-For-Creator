@@ -16,6 +16,9 @@ _TMP = tempfile.mkdtemp(prefix="sfc-test-")
 os.environ["SFC_DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 os.environ["SFC_UPLOAD_DIR"] = os.path.join(_TMP, "storage")
 os.environ["SFC_QUEUE_BACKEND"] = "inline"
+# Unreachable broker so render/worker dispatches always use the in-process
+# fallback instead of a developer's local Redis (which has different storage).
+os.environ["SFC_CELERY_BROKER_URL"] = "redis://127.0.0.1:6399/0"
 os.environ["SFC_MAX_UPLOAD_MB"] = "10"
 os.environ["SFC_MAX_DURATION_MIN"] = "60"
 os.environ["SFC_DAILY_SECONDS_PER_SESSION"] = "60"
