@@ -7,7 +7,7 @@ import os
 import shutil
 import time
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import SessionLocal, utcnow
