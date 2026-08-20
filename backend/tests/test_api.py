@@ -82,7 +82,6 @@ def test_config_endpoint(client):
     assert body["max_duration_min"] == 60
     assert body["max_queue"] == 50
     assert "zh" in body["supported_languages"]
-    assert body["session_remaining_seconds"] == 60
     assert body["tiers"] == ["lite", "standard", "pro"]
     assert body["llm_available"] is True
     assert body["default_options"] == {
@@ -377,15 +376,12 @@ def test_duration_over_limit_400(client, tmp_path, override_settings):
     assert "duration" in resp.json()["detail"]
 
 
-def test_daily_quota_429(client, tmp_path, override_settings):
-    override_settings(daily_seconds_per_session=3)
+def test_daily_quota_removed(client, tmp_path, override_settings):
+    override_settings(max_upload_mb=10, max_duration_min=60)
     wav = make_wav(tmp_path / "q.wav", seconds=2.0)
     assert upload(client, wav, token="quota-tok").status_code == 202
-    resp = upload(client, wav, token="quota-tok")
-    assert resp.status_code == 429
-    body = resp.json()
-    assert "retry_after_seconds" in body
-    assert body["detail"]
+    assert upload(client, wav, token="quota-tok").status_code == 202
+    assert upload(client, wav, token="quota-tok").status_code == 202
 
 
 def test_queue_full_429(client, tmp_path, override_settings, monkeypatch):
@@ -503,12 +499,13 @@ def test_invalid_options_422(client, tmp_path):
     assert resp.status_code == 422
 
 
-def test_config_remaining_seconds_decreases(client, tmp_path):
+def test_config_no_remaining_seconds(client, tmp_path):
     wav = make_wav(tmp_path / "c.wav", seconds=2.0)
     assert upload(client, wav, token="cfg-tok").status_code == 202
     resp = client.get("/api/config", headers={"X-Session-Token": "cfg-tok"})
     assert resp.status_code == 200
-    assert resp.json()["session_remaining_seconds"] == pytest.approx(58.0)
+    # session_remaining_seconds removed with daily quota
+    assert "session_remaining_seconds" not in resp.json()
 
 
 # ---------------------------------------------------------------- job lifecycle errors

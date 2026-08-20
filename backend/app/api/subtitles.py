@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
-    current_user,
     ensure_not_expired,
     get_job_or_404,
     require_done,
@@ -16,7 +15,6 @@ from app.api.deps import (
 from app.config import Settings, get_settings
 from app.core.models import Segment, Word
 from app.database import get_db
-from app.models.db import User
 from app.schemas import SubtitlesUpdate
 from app.worker.serialization import json_to_segments, segments_to_json
 
@@ -27,14 +25,13 @@ router = APIRouter()
 def get_subtitles(
     job_id: str,
     token: str = Depends(session_token),
-    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
-    require_job_access(db, job, user, token)
+    require_job_access(job, token)
     return {
         "job_id": job.id,
         "language": job.language,
@@ -51,13 +48,12 @@ def put_subtitles(
     job_id: str,
     payload: SubtitlesUpdate,
     token: str = Depends(session_token),
-    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
-    require_job_access(db, job, user, token)
+    require_job_access(job, token)
 
     existing = (
         {seg.id: seg for seg in json_to_segments(job.segments_json)}

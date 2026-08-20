@@ -1,5 +1,4 @@
-"""TTL cleanup: delete expired jobs (storage dir + DB row), stale usage rows,
-and abandoned chunked-upload sessions."""
+"""TTL cleanup: delete expired jobs (storage dir + DB row) and abandoned chunked-upload sessions."""
 
 from __future__ import annotations
 
@@ -7,20 +6,16 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 
 from app.config import get_settings
 from app.database import SessionLocal, utcnow
-from app.models.db import Job, Usage
+from app.models.db import Job
 from app.storage import get_storage
 from app.worker.celery_app import celery_app
 
 log = logging.getLogger(__name__)
-
-#: usage rows older than this many days are pruned during cleanup
-USAGE_RETENTION_DAYS = 7
 
 #: subdirectory under SFC_UPLOAD_DIR holding in-progress chunk sessions
 CHUNKS_SUBDIR = ".chunks"
@@ -49,7 +44,7 @@ def _cleanup_stale_chunk_sessions() -> int:
 
 
 def cleanup_expired_jobs() -> int:
-    """Delete every job whose ``expires_at`` has passed, plus stale usage rows.
+    """Delete every job whose ``expires_at`` has passed.
 
     Returns the number of jobs deleted. Safe to call concurrently (each job
     dir/row is removed independently).
@@ -66,11 +61,6 @@ def cleanup_expired_jobs() -> int:
             storage.delete_dir(f"jobs/{job.id}")
             db.delete(job)
             deleted += 1
-
-        cutoff = (
-            datetime.now(timezone.utc).date() - timedelta(days=USAGE_RETENTION_DAYS)
-        ).isoformat()
-        db.execute(delete(Usage).where(Usage.date < cutoff))
         db.commit()
     finally:
         db.close()

@@ -54,8 +54,6 @@ class Settings(BaseSettings):
     max_upload_mb: float = 0
     #: 0 = no media duration cap
     max_duration_min: float = 0
-    #: 0 = no daily per-session cap
-    daily_seconds_per_session: int = 0
     #: 0 = no queue length cap
     max_queue: int = 0
     #: worker-side concurrency only; the API enforces queue length via max_queue
@@ -118,16 +116,6 @@ class Settings(BaseSettings):
     #: env accepts comma-separated list or JSON array (see _split_cors_origins)
     cors_origins: Annotated[list[str], NoDecode] = ["*"]
     version: str = "0.1.0"
-
-    # --- optional accounts (v2) ---
-    #: name of the HTTP-only auth cookie
-    auth_cookie_name: str = "sfc_session"
-    #: set the Secure flag on the auth cookie (enable behind HTTPS)
-    auth_cookie_secure: bool = False
-    #: HMAC-SHA256 secret signing the auth cookie; change in production
-    auth_secret: str = "sfc-dev-secret-change-me"
-    #: auth cookie lifetime in days
-    auth_session_days: int = 30
 
     @field_validator("gpu_index", mode="before")
     @classmethod

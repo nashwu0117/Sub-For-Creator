@@ -61,7 +61,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Create all tables (idempotent) and backfill columns on pre-existing DBs."""
-    from app.models.db import Job, Usage, User, Work  # noqa: F401  (register models on Base)
+    from app.models.db import Job  # noqa: F401  (register models on Base)
 
     Base.metadata.create_all(bind=engine)
     _ensure_job_columns(engine)

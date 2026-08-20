@@ -1,4 +1,4 @@
-"""TTL cleanup tests: expired jobs (rows + storage dirs) and stale usage rows."""
+"""TTL cleanup tests: expired jobs (rows + storage dirs)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.database import SessionLocal, utcnow
-from app.models.db import Job, Usage
+from app.models.db import Job
 from app.storage import audio_key, get_storage, source_key
 from app.worker.cleanup import cleanup_expired_jobs
 
@@ -74,25 +74,7 @@ def test_cleanup_returns_count():
     assert not _job_exists(second)
 
 
-def test_cleanup_prunes_old_usage_rows():
-    db = SessionLocal()
-    today = datetime.now(timezone.utc).date().isoformat()
-    old = (datetime.now(timezone.utc).date() - timedelta(days=8)).isoformat()
-    db.add(Usage(session_token="old-tok", date=old, uploaded_seconds=10.0))
-    db.add(Usage(session_token="recent-tok", date=today, uploaded_seconds=5.0))
-    db.commit()
-    db.close()
 
-    cleanup_expired_jobs()
-
-    db = SessionLocal()
-    try:
-        assert db.query(Usage).filter(Usage.session_token == "old-tok").count() == 0
-        recent = db.query(Usage).filter(Usage.session_token == "recent-tok").all()
-        assert len(recent) == 1
-        assert recent[0].date == today
-    finally:
-        db.close()
 
 
 def test_celery_registry_includes_task_modules():

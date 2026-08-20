@@ -27,7 +27,6 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
-    current_user,
     ensure_not_expired,
     get_job_or_404,
     require_done,
@@ -48,7 +47,7 @@ from app.exporters import (
     export_text,
     export_vtt,
 )
-from app.models.db import Job, User
+from app.models.db import Job
 from app.storage import get_storage, render_key, source_key
 from app.worker.serialization import json_to_segments
 
@@ -430,7 +429,6 @@ def start_export_render(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
-    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     font_size: int = Query(64, ge=1),
@@ -447,7 +445,7 @@ def start_export_render(
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
-    require_job_access(db, job, user, token)
+    require_job_access(job, token)
     status = start_render(
         job,
         fmt,
@@ -462,7 +460,6 @@ def export_render_status(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
-    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -470,7 +467,7 @@ def export_render_status(
     _validate_render_format(fmt)
     job = get_job_or_404(db, job_id)
     require_done(job)
-    require_job_access(db, job, user, token)
+    require_job_access(job, token)
     status, error = render_status(job_id, fmt, settings)
     return {"status": status, "error": error}
 
@@ -480,7 +477,6 @@ def export_job(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
-    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     font_size: int = Query(64, ge=1),
@@ -502,7 +498,7 @@ def export_job(
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
-    require_job_access(db, job, user, token)
+    require_job_access(job, token)
 
     params = {
         "font_size": font_size,
