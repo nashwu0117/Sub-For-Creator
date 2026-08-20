@@ -27,7 +27,6 @@
 - **多語言介面**：繁體中文、简体中文、English 即時切換（右上角選單，自動記憶）。
 - **大檔分片上傳**：超過 8 MB 自動分片，繞過網關/代理（如 GitHub Codespaces）的單請求大小上限。
 - **匿名使用，免註冊**：瀏覽器自動產生 session token，不收集任何個人資料。
-- **帳號系統與作品收藏**（可選）：註冊帳號後可將作業收藏為「我的作品」，收藏後作業僅限本人存取；不登入不影響任何既有功能。
 - **剪映草稿匯出**：一鍵匯出 CapCut 草稿 Zip，直接匯入剪映繼續剪輯。
 - **多 GPU 橫向擴展**：Celery 佇列分離（transcribe / render），多 worker 可各綁不同 GPU；預設亦可純 CPU 跑。
 - **Prometheus 監控**：`/api/metrics` 輸出 HTTP、佇列、GPU、儲存指標，附 docker-compose 監控疊層（Grafana + Prometheus）。
@@ -148,7 +147,6 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 |---|---|---|
 | 單檔大小 | 0（不限制） | `SFC_MAX_UPLOAD_MB` |
 | 單檔時長 | 0（不限制） | `SFC_MAX_DURATION_MIN` |
-| 每 session 每日上傳秒數 | 0（不限制） | `SFC_DAILY_SECONDS_PER_SESSION` |
 | 最大佇列長度 | 0（不限制） | `SFC_MAX_QUEUE` |
 | 同時處理任務數 | 2 | `SFC_MAX_CONCURRENT` |
 | 檔案保留時間 | 48 小時 | `SFC_TTL_HOURS` |
@@ -185,10 +183,6 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 | GET | `/api/jobs/{job_id}/export/{format}` | 匯出 `srt` / `vtt` / `txt` / `ass` / `fcpxml` / `capcut`（剪映草稿 Zip） / `mp4` / `webm_alpha` |
 | POST | `/api/jobs/{job_id}/export/{format}/render` | 開始背景渲染 MP4 / WebM（回傳 `rendering` / `ready`） |
 | GET | `/api/jobs/{job_id}/export/{format}/status` | 輪詢渲染進度（`idle` / `rendering` / `ready` / `failed`） |
-| POST | `/api/auth/register` · `/api/auth/login` · `/api/auth/logout` | 帳號註冊 / 登入 / 登出（可選，HttpOnly cookie） |
-| GET | `/api/auth/me` | 目前登入的使用者 |
-| GET | `/api/works` | 列出我的作品（收藏的作業） |
-| POST | `/api/works/{job_id}` | 收藏一個作業到我的作品 |
 | GET | `/api/fonts` | 列出內建免費字體與已上傳的自訂字型 |
 | POST | `/api/fonts` | 上傳自訂字型（.ttf / .otf，燒錄用） |
 | GET | `/api/fonts/system/{filename}` | 下載內建免費字型檔 |
@@ -240,7 +234,6 @@ v1 已完成：
 
 接下來規劃（v2 已實作，等待驗收）：
 
-- ~~帳號系統與作品收藏~~ ✅
 - ~~剪映（CapCut）草稿匯出~~ ✅
 - ~~多 GPU 橫向擴展~~ ✅
 - ASR 精準度強化：VAD + 解碼參數 ✅ 已實作；降噪 / 響度標準化 / 詞庫（initial_prompt）/ LLM 校正 ✅ 已實作
@@ -262,4 +255,6 @@ AGPL-3.0 是 copyleft 授權：修改後再散布（包括以網路服務形式�
 
 ## 免責聲明
 
-字幕內容由 AI 自動產生，**可能存在錯誤**，發布前請務必自行校對。本專案以「現況」（AS IS）提供，不保證辨識準確性、服務可用性或資料完整性。
+本專案與其提供的服務均依「現況」（AS IS）提供，不保證服務持續可用、字幕辨識結果的正確性、完整性或適用性。字幕內容由 AI 自動產生，**可能存在錯誤**，發布前請務必自行校對。
+
+使用者應自行確認已取得上傳內容及產出字幕的必要權利，並自行承擔使用結果所產生的法律、著作權、隱私及其他風險。在法律允許的最大範圍內，開發者、維護者及貢獻者不對因使用、無法使用本專案或服務，或依賴其產出內容所造成的任何直接、間接、附帶或衍生損害承擔法律責任。自行部署本專案時，請依你的所在地法律、資料保護要求及使用情境自行評估與設定。
