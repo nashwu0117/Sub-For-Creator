@@ -97,6 +97,19 @@ class Settings(BaseSettings):
     #: None = use the tier preset (True)
     vad_enabled: bool | None = None
 
+    # --- ASR accuracy: audio preprocessing + dictionary + LLM correction ---
+    denoise_enabled: bool | None = None          # None = tier preset (standard/pro on, lite off)
+    loudnorm_enabled: bool | None = None         # None = tier preset (standard/pro on, lite off)
+    noise_reduction_strength: float = 0.75       # noisereduce prop_decrease
+    dictionary_path: str = "./data/user_dictionary.json"
+    initial_prompt_max_chars: int = 1500
+    llm_correction_enabled: bool | None = None   # None = tier preset (pro on, lite/standard off)
+    llm_provider: str = "ollama"                 # "ollama" | "openai"
+    ollama_url: str = "http://localhost:11434"
+    llm_api_key: str | None = None
+    llm_model: str = "qwen2.5:7b"
+    llm_timeout_seconds: float = 120.0
+
     # --- monitoring ---
     #: expose GET /api/metrics (Prometheus text format); set false to hard-off
     metrics_enabled: bool = True

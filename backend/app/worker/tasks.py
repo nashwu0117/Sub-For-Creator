@@ -56,7 +56,16 @@ def process_job(job_id: str) -> None:
 
 def _process_job(job_id: str) -> None:
     # lazy import: core helpers are provided by the app.core package
-    from app.core import extract_audio, get_backend, segment_words
+    from app.core import (
+        LLMConfig,
+        build_initial_prompt,
+        correct_transcript,
+        extract_audio,
+        get_backend,
+        load_terms,
+        preprocess_audio,
+        segment_words,
+    )
 
     settings = get_settings()
     storage = get_storage()
@@ -80,22 +89,51 @@ def _process_job(job_id: str) -> None:
     )
     audio_path = storage.writable_path(audio_key(job_id))
     extract_audio(source_path, audio_path, sample_rate=16000)
-    storage.save(audio_path, audio_key(job_id))
+
+    # 1b. preprocessing (denoise / loudnorm) — chain into a distinct temp path
+    if job.denoise_enabled or job.loudnorm_enabled:
+        _update_job(job_id, stage=JobStage.PREPROCESSING.value, progress=25.0)
+        final = preprocess_audio(
+            audio_path,
+            storage.writable_path(audio_key(job_id) + ".proc.wav"),
+            denoise=bool(job.denoise_enabled),
+            loudnorm=bool(job.loudnorm_enabled),
+            prop_decrease=settings.noise_reduction_strength,
+        )
+        storage.save(final, audio_key(job_id))
+    else:
+        storage.save(audio_path, audio_key(job_id))
 
     # 2. transcribing
     _update_job(job_id, stage=JobStage.TRANSCRIBING.value, progress=40.0)
+    terms = load_terms(settings.dictionary_path)
+    prompt = build_initial_prompt(terms, settings.initial_prompt_max_chars)
     backend = get_backend(
-        tier=settings.tier,
+        tier=job.tier or settings.tier,
         beam_size=settings.beam_size,
         temperature=settings.temperature,
         vad_enabled=settings.vad_enabled,
     )
-    raw = backend.transcribe(storage.open_path(audio_key(job_id)), job.language or None)
+    raw = backend.transcribe(
+        storage.open_path(audio_key(job_id)), job.language or None, initial_prompt=prompt
+    )
     _update_job(job_id, progress=70.0)
 
     # 3. segmenting
     _update_job(job_id, stage=JobStage.SEGMENTING.value, progress=85.0)
     segments = segment_words(raw.all_words(), raw.language, max_chars=settings.max_line_chars)
+
+    # 3b. LLM correction (best-effort; never raises)
+    if job.llm_correction_enabled:
+        _update_job(job_id, progress=90.0)
+        llm_cfg = LLMConfig(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            url=settings.ollama_url,
+            api_key=settings.llm_api_key,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+        segments = correct_transcript(segments, config=llm_cfg, dictionary_terms=terms)
     _update_job(job_id, progress=95.0)
 
     # 4. done

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { createWork, getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
+import { addDictionaryTerms, createWork, getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { usePolling } from "../hooks/usePolling";
 import { useAuthedMedia } from "../hooks/useAuthedMedia";
@@ -177,6 +177,10 @@ export default function Editor() {
     }
   }, [jobId, user, savingWork, openAuth, showToast, t]);
 
+  const handleAddToDictionary = useCallback(async (text: string) => {
+    await addDictionaryTerms([text]);
+  }, []);
+
   const activeSegmentId = useMemo(() => {
     const s = segments.find(
       (seg) => currentTime >= seg.start - 0.05 && currentTime <= seg.end + 0.05,
@@ -296,6 +300,7 @@ export default function Editor() {
             onSave={() => void handleSave()}
             dirty={dirty}
             saving={saving}
+            onAddToDictionary={handleAddToDictionary}
           />
           <StylePanel style={style} onChange={setStyle} />
           <ExportPanel jobId={jobId} style={style} onToast={showToast} />

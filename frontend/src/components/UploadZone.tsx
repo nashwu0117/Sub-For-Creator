@@ -1,11 +1,17 @@
 import { useTranslation } from "react-i18next";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createJob } from "../api/client";
 import type { AppConfig, CreateJobResponse } from "../types";
 
 interface Props {
   config: AppConfig | null;
   onJobCreated: (res: CreateJobResponse, filename: string) => void;
+}
+
+const DEFAULT_TIERS = ["lite", "standard", "pro"];
+
+function tierLabelKey(tier: string): string {
+  return `uploadZone.tier${tier.charAt(0).toUpperCase()}${tier.slice(1)}`;
 }
 
 function formatFileSize(bytes: number): string {
@@ -18,10 +24,21 @@ export default function UploadZone({ config, onJobCreated }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState("auto");
+  const [tier, setTier] = useState<string>(config?.default_options.tier ?? "standard");
+  const [llmCorrection, setLlmCorrection] = useState<boolean>(
+    config?.default_options.llm_correction_enabled ?? false,
+  );
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // config 載入後以伺服器預設值初始化
+  useEffect(() => {
+    if (!config) return;
+    setTier(config.default_options.tier);
+    setLlmCorrection(config.default_options.llm_correction_enabled);
+  }, [config]);
 
   const validate = useCallback(
     (f: File): string | null => {
@@ -74,6 +91,8 @@ export default function UploadZone({ config, onJobCreated }: Props) {
           ? {
               model_size: config.default_options.model_size,
               max_line_chars: config.default_options.max_line_chars,
+              tier,
+              ...(config.llm_available ? { llm_correction_enabled: llmCorrection } : {}),
             }
           : undefined,
         setProgress,
@@ -86,10 +105,12 @@ export default function UploadZone({ config, onJobCreated }: Props) {
     } finally {
       setUploading(false);
     }
-  }, [file, language, uploading, onJobCreated, config, t]);
+  }, [file, language, tier, llmCorrection, uploading, onJobCreated, config, t]);
 
   const languages = config ? ["auto", ...config.supported_languages] : ["auto"];
   const unlimited = !config || config.max_upload_mb <= 0;
+  const llmAvailable = config?.llm_available ?? false;
+  const tiers = config?.tiers ?? DEFAULT_TIERS;
 
   return (
     <div className="upload-section" aria-busy={uploading}>
@@ -175,6 +196,43 @@ export default function UploadZone({ config, onJobCreated }: Props) {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor="upload-tier">
+              {t("uploadZone.tier")}
+            </label>
+            <select
+              id="upload-tier"
+              className="select-input"
+              value={tier}
+              onChange={(e) => setTier(e.target.value)}
+              disabled={uploading}
+            >
+              {tiers.map((code) => (
+                <option key={code} value={code}>
+                  {t(tierLabelKey(code))}
+                </option>
+              ))}
+            </select>
+            <p className="field-hint tier-desc">{t(`uploadZone.tierDescriptions.${tier}`)}</p>
+          </div>
+          <div className="field">
+            <label
+              className={`checkbox-label${llmAvailable ? "" : " disabled"}`}
+              htmlFor="upload-llm"
+            >
+              <input
+                id="upload-llm"
+                type="checkbox"
+                checked={llmCorrection}
+                onChange={(e) => setLlmCorrection(e.target.checked)}
+                disabled={uploading || !llmAvailable}
+              />
+              <span>{t("uploadZone.llmCorrection")}</span>
+            </label>
+            <p className={`field-hint${llmAvailable ? "" : " warn"}`}>
+              {llmAvailable ? t("uploadZone.llmCorrectionHint") : t("uploadZone.llmUnavailable")}
+            </p>
           </div>
           <button type="button" className="btn btn-primary" onClick={() => void handleUpload()} disabled={uploading}>
             {uploading ? (

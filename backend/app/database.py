@@ -6,6 +6,7 @@ timezone support and naive-UTC keeps SQL-level comparisons consistent.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Generator
 from datetime import datetime, timezone
@@ -14,6 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
+
+log = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -57,7 +60,37 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create all tables (idempotent)."""
+    """Create all tables (idempotent) and backfill columns on pre-existing DBs."""
     from app.models.db import Job, Usage, User, Work  # noqa: F401  (register models on Base)
 
     Base.metadata.create_all(bind=engine)
+    _ensure_job_columns(engine)
+
+
+#: columns added after the initial schema; ALTERed in on pre-existing SQLite DBs
+_JOB_BACKFILL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("tier", "VARCHAR(16)"),
+    ("denoise_enabled", "BOOLEAN"),
+    ("loudnorm_enabled", "BOOLEAN"),
+    ("llm_correction_enabled", "BOOLEAN"),
+)
+
+
+def _ensure_job_columns(bind) -> None:
+    """Idempotently add missing ``jobs`` columns (SQLite only, best-effort).
+
+    ``create_all`` only creates missing tables — it never alters existing ones,
+    so a dev DB created before the ASR-enhancement columns would crash on
+    INSERT. PRAGMA + ALTER TABLE keeps those DBs working without a manual
+    migration. Failures are logged and swallowed so startup never crashes.
+    """
+    if bind.dialect.name != "sqlite":
+        return
+    try:
+        with bind.connect() as conn:
+            existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(jobs)")}
+            for name, ddl in _JOB_BACKFILL_COLUMNS:
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE jobs ADD COLUMN {name} {ddl}")
+    except Exception:  # noqa: BLE001 - migration is best-effort
+        log.warning("could not backfill jobs columns; run a manual migration", exc_info=True)

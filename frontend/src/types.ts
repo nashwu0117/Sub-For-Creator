@@ -45,9 +45,17 @@ export interface AppConfig {
   max_queue: number;
   supported_languages: string[];
   session_remaining_seconds: number;
+  /** ASR 精準度等級（如 ["lite", "standard", "pro"]） */
+  tiers: string[];
+  /** 後端是否已設定 LLM 提供者（Ollama 或 API Key） */
+  llm_available: boolean;
   default_options: {
     max_line_chars: number;
     model_size: string;
+    tier: string;
+    denoise_enabled: boolean;
+    loudnorm_enabled: boolean;
+    llm_correction_enabled: boolean;
   };
 }
 

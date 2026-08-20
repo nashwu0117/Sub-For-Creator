@@ -83,7 +83,16 @@ def test_config_endpoint(client):
     assert body["max_queue"] == 50
     assert "zh" in body["supported_languages"]
     assert body["session_remaining_seconds"] == 60
-    assert body["default_options"] == {"max_line_chars": 16, "model_size": "large-v3"}
+    assert body["tiers"] == ["lite", "standard", "pro"]
+    assert body["llm_available"] is True
+    assert body["default_options"] == {
+        "max_line_chars": 16,
+        "model_size": "medium",
+        "tier": "standard",
+        "denoise_enabled": True,
+        "loudnorm_enabled": True,
+        "llm_correction_enabled": False,
+    }
 
 
 def test_config_requires_token(client):
@@ -122,7 +131,7 @@ def test_happy_path_wav(client, tmp_path):
     assert done["expires_at"] is not None
     assert done["meta"]["language"] == "zh"
     assert done["meta"]["filename"] == "sample.wav"
-    assert done["meta"]["model_size"] == "large-v3"
+    assert done["meta"]["model_size"] == "medium"
     assert done["meta"]["duration"] > 0
 
     # subtitles: segments with words
@@ -131,7 +140,7 @@ def test_happy_path_wav(client, tmp_path):
     subs = resp.json()
     assert subs["job_id"] == job_id
     assert subs["language"] == "zh"
-    assert subs["meta"] == {"model_size": "large-v3", "max_line_chars": 16}
+    assert subs["meta"] == {"model_size": "medium", "max_line_chars": 16}
     assert len(subs["segments"]) >= 1
     seg = subs["segments"][0]
     assert set(seg) >= {"id", "start", "end", "text", "words"}

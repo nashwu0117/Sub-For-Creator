@@ -11,6 +11,7 @@ interface Props {
   onSave: () => void;
   dirty: boolean;
   saving: boolean;
+  onAddToDictionary: (text: string) => Promise<void>;
 }
 
 export default function SubtitleList({
@@ -21,6 +22,7 @@ export default function SubtitleList({
   onSave,
   dirty,
   saving,
+  onAddToDictionary,
 }: Props) {
   const { t } = useTranslation();
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -82,6 +84,7 @@ export default function SubtitleList({
               onSeek={onSeek}
               onChange={(patch) => updateSegment(seg.id, patch)}
               onDelete={() => deleteSegment(seg.id)}
+              onAddToDictionary={onAddToDictionary}
             />
           </div>
         ))}

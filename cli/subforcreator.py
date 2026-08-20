@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -27,14 +28,20 @@ if str(_BACKEND_DIR) not in sys.path:
 
 try:
     from app.core import (
+        LLMConfig,
         SFCError,
         TranscriptionResult,
+        build_initial_prompt,
+        correct_transcript,
         extract_audio,
         get_backend,
+        load_terms,
+        preprocess_audio,
         probe_duration,
         probe_media,
         segment_words,
     )
+    from app.core.asr import resolve_asr_config
     from app.exporters import (
         AssStyle,
         export_ass,
@@ -99,6 +106,54 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-vad", action="store_true",
         help="disable voice-activity detection (VAD); default: enabled",
+    )
+    denoise_group = p.add_mutually_exclusive_group()
+    denoise_group.add_argument(
+        "--denoise", dest="denoise", action="store_true", default=None,
+        help="enable audio denoising (default: tier preset)",
+    )
+    denoise_group.add_argument(
+        "--no-denoise", dest="denoise", action="store_false",
+        help="disable audio denoising",
+    )
+    loudnorm_group = p.add_mutually_exclusive_group()
+    loudnorm_group.add_argument(
+        "--loudnorm", dest="loudnorm", action="store_true", default=None,
+        help="enable loudness normalization (default: tier preset)",
+    )
+    loudnorm_group.add_argument(
+        "--no-loudnorm", dest="loudnorm", action="store_false",
+        help="disable loudness normalization",
+    )
+    p.add_argument(
+        "--dictionary", type=Path, default=None,
+        help="user dictionary JSON path ({\"terms\": [...]}); "
+        "default: SFC_DICTIONARY_PATH or ./data/user_dictionary.json",
+    )
+    llm_group = p.add_mutually_exclusive_group()
+    llm_group.add_argument(
+        "--llm-correction", dest="llm_correction", action="store_true", default=None,
+        help="enable LLM transcript correction (default: tier preset)",
+    )
+    llm_group.add_argument(
+        "--no-llm-correction", dest="llm_correction", action="store_false",
+        help="disable LLM transcript correction",
+    )
+    p.add_argument(
+        "--llm-provider", default=None,
+        help="LLM provider: ollama | openai (default: SFC_LLM_PROVIDER or ollama)",
+    )
+    p.add_argument(
+        "--llm-model", default=None,
+        help="LLM model name (default: SFC_LLM_MODEL or qwen2.5:7b)",
+    )
+    p.add_argument(
+        "--ollama-url", default=None,
+        help="Ollama server URL (default: SFC_OLLAMA_URL or http://localhost:11434)",
+    )
+    p.add_argument(
+        "--llm-api-key", default=None,
+        help="API key for OpenAI-compatible providers (default: SFC_LLM_API_KEY)",
     )
     p.add_argument(
         "--max-line-chars", type=int, default=None,
@@ -247,6 +302,39 @@ def run(args) -> int:
         wav_path = Path(workdir) / "audio.wav"
         extract_audio(str(args.input), str(wav_path))
 
+        # --- ASR accuracy: preprocessing + dictionary + LLM correction ------
+        cfg = resolve_asr_config(tier=args.tier)
+        denoise = args.denoise if args.denoise is not None else cfg.denoise_enabled
+        loudnorm = args.loudnorm if args.loudnorm is not None else cfg.loudnorm_enabled
+        llm_correction = (
+            args.llm_correction
+            if args.llm_correction is not None
+            else cfg.llm_correction_enabled
+        )
+
+        transcribe_path = str(wav_path)
+        if denoise or loudnorm:
+            if not args.quiet:
+                print(
+                    f"  preprocessing: denoise={denoise} loudnorm={loudnorm}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            transcribe_path = preprocess_audio(
+                str(wav_path),
+                str(Path(workdir) / "preprocessed.wav"),
+                denoise=denoise,
+                loudnorm=loudnorm,
+            )
+
+        dictionary_path = (
+            args.dictionary
+            or os.environ.get("SFC_DICTIONARY_PATH")
+            or "./data/user_dictionary.json"
+        )
+        terms = load_terms(str(dictionary_path))
+        initial_prompt = build_initial_prompt(terms)
+
         step(2, total, "Transcribing...", args.quiet)
         backend = get_backend(
             "mock" if args.mock else None,
@@ -258,15 +346,35 @@ def run(args) -> int:
         )
         if not args.quiet and tqdm is not None:
             with tqdm.tqdm(total=1, desc="  transcribe", leave=False) as bar:
-                raw = backend.transcribe(str(wav_path), language=args.lang)
+                raw = backend.transcribe(
+                    transcribe_path, language=args.lang, initial_prompt=initial_prompt
+                )
                 bar.update(1)
         else:
-            raw = backend.transcribe(str(wav_path), language=args.lang)
+            raw = backend.transcribe(
+                transcribe_path, language=args.lang, initial_prompt=initial_prompt
+            )
 
         step(3, total, "Segmenting...", args.quiet)
         segments = segment_words(
             raw.all_words(), raw.language, max_chars=args.max_line_chars
         )
+
+        if llm_correction:
+            llm_kwargs = {
+                "provider": args.llm_provider
+                or os.environ.get("SFC_LLM_PROVIDER")
+                or "ollama",
+                "model": args.llm_model or os.environ.get("SFC_LLM_MODEL") or "qwen2.5:7b",
+            }
+            if args.ollama_url or os.environ.get("SFC_OLLAMA_URL"):
+                llm_kwargs["url"] = args.ollama_url or os.environ.get("SFC_OLLAMA_URL")
+            if args.llm_api_key or os.environ.get("SFC_LLM_API_KEY"):
+                llm_kwargs["api_key"] = args.llm_api_key or os.environ.get("SFC_LLM_API_KEY")
+            segments = correct_transcript(
+                segments, config=LLMConfig(**llm_kwargs), dictionary_terms=terms
+            )
+
         result = TranscriptionResult(
             segments=segments,
             language=raw.language,

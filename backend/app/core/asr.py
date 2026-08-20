@@ -29,9 +29,9 @@ VALID_BACKENDS = ("whisperx", "faster-whisper", "mock")
 
 VALID_TIERS = ("lite", "standard", "pro")
 
-#: Tier presets — model size / beam size / temperature / VAD per tier.
-#: ``compute_type`` is optional; when absent the backend picks a device-based
-#: default (float16 on CUDA, int8 on CPU).
+#: Tier presets — model size / beam size / temperature / VAD / accuracy
+#: enhancements per tier. ``compute_type`` is optional; when absent the backend
+#: picks a device-based default (float16 on CUDA, int8 on CPU).
 TIER_PRESETS: dict[str, dict[str, object]] = {
     "lite": {
         "model_size": "small",
@@ -39,18 +39,27 @@ TIER_PRESETS: dict[str, dict[str, object]] = {
         "beam_size": 5,
         "temperature": 0.0,
         "vad_enabled": True,
+        "denoise_enabled": False,
+        "loudnorm_enabled": False,
+        "llm_correction_enabled": False,
     },
     "standard": {
         "model_size": "medium",
         "beam_size": 5,
         "temperature": 0.0,
         "vad_enabled": True,
+        "denoise_enabled": True,
+        "loudnorm_enabled": True,
+        "llm_correction_enabled": False,
     },
     "pro": {
         "model_size": "large-v3",
         "beam_size": 10,
         "temperature": 0.0,
         "vad_enabled": True,
+        "denoise_enabled": True,
+        "loudnorm_enabled": True,
+        "llm_correction_enabled": True,
     },
 }
 
@@ -81,7 +90,12 @@ MOCK_SENTENCES: dict[str, list[str]] = {
 class ASRBackend(Protocol):
     """Transcribe an audio file into word/segment timestamps."""
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        initial_prompt: str | None = None,
+    ) -> TranscriptionResult:
         ...
 
 
@@ -160,6 +174,9 @@ class ASRConfig:
     vad_enabled: bool = True
     vad_onset: float = 0.5
     vad_offset: float = 0.363
+    denoise_enabled: bool = False
+    loudnorm_enabled: bool = False
+    llm_correction_enabled: bool = False
 
 
 def resolve_asr_config(
@@ -170,6 +187,9 @@ def resolve_asr_config(
     beam_size: int | None = None,
     temperature: float | None = None,
     vad_enabled: bool | None = None,
+    denoise_enabled: bool | None = None,
+    loudnorm_enabled: bool | None = None,
+    llm_correction_enabled: bool | None = None,
 ) -> ASRConfig:
     """Resolve effective ASR parameters.
 
@@ -200,6 +220,15 @@ def resolve_asr_config(
     if vad_enabled is None:
         vad_enabled = _env_bool("SFC_VAD_ENABLED", bool(preset["vad_enabled"]))
 
+    if denoise_enabled is None:
+        denoise_enabled = _env_bool("SFC_DENOISE_ENABLED", bool(preset["denoise_enabled"]))
+    if loudnorm_enabled is None:
+        loudnorm_enabled = _env_bool("SFC_LOUDNORM_ENABLED", bool(preset["loudnorm_enabled"]))
+    if llm_correction_enabled is None:
+        llm_correction_enabled = _env_bool(
+            "SFC_LLM_CORRECTION_ENABLED", bool(preset["llm_correction_enabled"])
+        )
+
     compute_type = preset.get("compute_type")
     return ASRConfig(
         tier=tier,
@@ -208,6 +237,9 @@ def resolve_asr_config(
         beam_size=beam_size,
         temperature=temperature,
         vad_enabled=vad_enabled,
+        denoise_enabled=denoise_enabled,
+        loudnorm_enabled=loudnorm_enabled,
+        llm_correction_enabled=llm_correction_enabled,
     )
 
 
@@ -267,7 +299,12 @@ class WhisperXBackend:
         self.vad_onset = vad_onset if vad_onset is not None else cfg.vad_onset
         self.vad_offset = vad_offset if vad_offset is not None else cfg.vad_offset
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        initial_prompt: str | None = None,
+    ) -> TranscriptionResult:
         try:
             import whisperx
         except ImportError as exc:
@@ -280,7 +317,10 @@ class WhisperXBackend:
         compute_type = self.compute_type or ("float16" if device == "cuda" else "int8")
         model = self._load_model(whisperx, device, compute_type)
         audio = whisperx.load_audio(audio_path)
-        result = model.transcribe(audio, language=_resolve_language(language))
+        transcribe_kwargs: dict[str, object] = {"language": _resolve_language(language)}
+        if initial_prompt is not None:
+            transcribe_kwargs["initial_prompt"] = initial_prompt
+        result = model.transcribe(audio, **transcribe_kwargs)
 
         language_out = _resolve_language(language) or result.get("language") or "unknown"
         # Word-level alignment is best-effort: fall back to segment timestamps.
@@ -411,7 +451,12 @@ class FasterWhisperBackend:
         self.vad_enabled = cfg.vad_enabled
         self.vad_onset = vad_onset if vad_onset is not None else cfg.vad_onset
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        initial_prompt: str | None = None,
+    ) -> TranscriptionResult:
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:
@@ -424,15 +469,17 @@ class FasterWhisperBackend:
         compute_type = self.compute_type or ("float16" if device == "cuda" else "int8")
         model = WhisperModel(self.model_size, device=device, compute_type=compute_type)
         vad_parameters = {"threshold": self.vad_onset} if self.vad_enabled else None
-        segments_iter, info = model.transcribe(
-            audio_path,
-            language=_resolve_language(language),
-            word_timestamps=True,
-            vad_filter=self.vad_enabled,
-            vad_parameters=vad_parameters,
-            beam_size=self.beam_size,
-            temperature=self.temperature,
-        )
+        transcribe_kwargs: dict[str, object] = {
+            "language": _resolve_language(language),
+            "word_timestamps": True,
+            "vad_filter": self.vad_enabled,
+            "vad_parameters": vad_parameters,
+            "beam_size": self.beam_size,
+            "temperature": self.temperature,
+        }
+        if initial_prompt is not None:
+            transcribe_kwargs["initial_prompt"] = initial_prompt
+        segments_iter, info = model.transcribe(audio_path, **transcribe_kwargs)
 
         segments = []
         for i, seg in enumerate(segments_iter):
@@ -465,7 +512,12 @@ class MockBackend:
     def __init__(self, model_size: str = "mock"):
         self.model_size = model_size
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        initial_prompt: str | None = None,
+    ) -> TranscriptionResult:
         lang = "zh" if language in (None, "", "auto") else language
         sentences = MOCK_SENTENCES.get(lang, MOCK_SENTENCES["zh"])
         try:

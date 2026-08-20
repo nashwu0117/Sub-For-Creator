@@ -5,7 +5,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, select
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    select,
+)
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.models import JobStatus
@@ -27,6 +37,10 @@ class Job(Base):
     filename: Mapped[str] = mapped_column(String(255))
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     model_size: Mapped[str] = mapped_column(String(32))
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    denoise_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    loudnorm_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    llm_correction_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     segments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

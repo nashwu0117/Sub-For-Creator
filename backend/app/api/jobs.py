@@ -27,6 +27,7 @@ from app.api.limits import (
     record_usage,
 )
 from app.config import SUPPORTED_LANGUAGES, Settings, get_settings
+from app.core.asr import VALID_TIERS, resolve_asr_config
 from app.core.models import JobStatus
 from app.database import get_db
 from app.models.db import ACTIVE_STATUSES, Job, User
@@ -52,15 +53,22 @@ def _parse_options(raw: str | None) -> JobOptions:
     if raw is None or not raw.strip():
         return JobOptions()
     try:
-        return JobOptions.model_validate_json(raw)
+        opts = JobOptions.model_validate_json(raw)
     except ValidationError as exc:
         raise HTTPException(
             status_code=422,
             detail=(
-                "invalid options: expected JSON object with optional model_size"
-                " and max_line_chars"
+                "invalid options: expected JSON object with optional model_size,"
+                " max_line_chars, tier, denoise_enabled, loudnorm_enabled and"
+                " llm_correction_enabled"
             ),
         ) from exc
+    if opts.tier is not None and opts.tier not in VALID_TIERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid tier {opts.tier!r}; valid options: {', '.join(VALID_TIERS)}",
+        )
+    return opts
 
 
 def _queue_position(db: Session, job: Job) -> int:
@@ -101,7 +109,14 @@ def _finalize_upload(
 
     lang = _resolve_language(language)
     opts = _parse_options(options)
-    model_size = opts.model_size or settings.whisper_model
+    cfg = resolve_asr_config(
+        tier=opts.tier or settings.tier,
+        model_size=opts.model_size,
+        model_env="SFC_WHISPERX_MODEL",
+        denoise_enabled=opts.denoise_enabled,
+        loudnorm_enabled=opts.loudnorm_enabled,
+        llm_correction_enabled=opts.llm_correction_enabled,
+    )
 
     check_daily_quota(db, token, duration)
     check_queue_capacity(db)
@@ -117,7 +132,11 @@ def _finalize_upload(
         status=JobStatus.QUEUED.value,
         filename=filename,
         language=lang,
-        model_size=model_size,
+        model_size=cfg.model_size,
+        tier=cfg.tier,
+        denoise_enabled=cfg.denoise_enabled,
+        loudnorm_enabled=cfg.loudnorm_enabled,
+        llm_correction_enabled=cfg.llm_correction_enabled,
         duration=duration,
     )
     db.add(job)
@@ -215,5 +234,9 @@ def get_job(
             "duration": job.duration,
             "language": job.language,
             "model_size": job.model_size,
+            "tier": job.tier,
+            "denoise_enabled": job.denoise_enabled,
+            "loudnorm_enabled": job.loudnorm_enabled,
+            "llm_correction_enabled": job.llm_correction_enabled,
         },
     }

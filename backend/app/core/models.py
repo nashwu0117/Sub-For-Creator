@@ -29,6 +29,7 @@ class JobStage(str, Enum):
     """Sub-stages of processing, used for progress display."""
 
     EXTRACTING = "extracting"
+    PREPROCESSING = "preprocessing"
     TRANSCRIBING = "transcribing"
     SEGMENTING = "segmenting"
     RENDERING = "rendering"

@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Segment } from "../types";
 
 interface Props {
@@ -9,7 +9,10 @@ interface Props {
   onSeek: (time: number) => void;
   onChange: (patch: Partial<Segment>) => void;
   onDelete: () => void;
+  onAddToDictionary: (text: string) => Promise<void>;
 }
+
+type DictState = "idle" | "adding" | "added" | "error";
 
 function formatTime(t: number): string {
   const safe = Math.max(0, t);
@@ -31,9 +34,19 @@ function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
 
-export default function SubtitleItem({ segment, index, active, onSeek, onChange, onDelete }: Props) {
+export default function SubtitleItem({
+  segment,
+  index,
+  active,
+  onSeek,
+  onChange,
+  onDelete,
+  onAddToDictionary,
+}: Props) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dictTimerRef = useRef<number | null>(null);
+  const [dictState, setDictState] = useState<DictState>("idle");
 
   // 自動調整高度
   useEffect(() => {
@@ -42,6 +55,27 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [segment.text]);
+
+  useEffect(() => {
+    return () => {
+      if (dictTimerRef.current !== null) window.clearTimeout(dictTimerRef.current);
+    };
+  }, []);
+
+  const handleAddToDictionary = useCallback(async () => {
+    if (dictState === "adding") return;
+    const text = segment.text.trim();
+    if (!text) return;
+    setDictState("adding");
+    try {
+      await onAddToDictionary(text);
+      setDictState("added");
+    } catch {
+      setDictState("error");
+    }
+    if (dictTimerRef.current !== null) window.clearTimeout(dictTimerRef.current);
+    dictTimerRef.current = window.setTimeout(() => setDictState("idle"), 1500);
+  }, [dictState, segment.text, onAddToDictionary]);
 
   return (
     <div
@@ -118,6 +152,43 @@ export default function SubtitleItem({ segment, index, active, onSeek, onChange,
             +
           </button>
         </div>
+        <span className="dict-wrap">
+          <button
+            type="button"
+            className={`dict-btn${dictState === "added" ? " added" : ""}${dictState === "error" ? " error" : ""}`}
+            title={t("subtitleItem.addToDictionary")}
+            aria-label={t("subtitleItem.addToDictionary")}
+            disabled={dictState === "adding"}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleAddToDictionary();
+            }}
+          >
+            {dictState === "added" ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+            )}
+          </button>
+          {dictState === "added" && (
+            <span className="dict-feedback added" role="status">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              {t("subtitleItem.addedToDictionary")}
+            </span>
+          )}
+          {dictState === "error" && (
+            <span className="dict-feedback error" role="alert">
+              {t("subtitleItem.addFailed")}
+            </span>
+          )}
+        </span>
         <button
           type="button"
           className="subtitle-delete"

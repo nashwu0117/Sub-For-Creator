@@ -448,6 +448,72 @@ textarea {
   color: var(--text);
 }
 
+/* 精準度等級說明 */
+.tier-desc {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ---------- Checkbox ---------- */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.checkbox-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.checkbox-label input[type="checkbox"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent-gradient);
+  transform: scale(0);
+  transition: transform var(--transition-fast);
+}
+
+.checkbox-label input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.checkbox-label input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.checkbox-label.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.field-hint.warn {
+  color: var(--warning);
+}
+
 /* ---------- 開關 ---------- */
 .switch {
   position: relative;
@@ -1397,9 +1463,99 @@ textarea {
 
 .nudge-btn:focus-visible,
 .subtitle-delete:focus-visible,
+.dict-btn:focus-visible,
 .file-chip .file-clear:focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: 1px;
+}
+
+/* 加入詞庫按鈕 */
+.dict-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dict-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.dict-btn:hover:not(:disabled) {
+  color: var(--accent-2);
+  background: var(--accent-soft-2);
+}
+
+.dict-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.dict-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dict-btn.added {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.dict-btn.error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.dict-feedback {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  animation: dict-pop 160ms ease;
+}
+
+.dict-feedback svg {
+  width: 12px;
+  height: 12px;
+}
+
+.dict-feedback.added {
+  color: var(--success);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.dict-feedback.error {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+@keyframes dict-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .subtitle-delete {

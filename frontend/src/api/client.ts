@@ -102,6 +102,8 @@ export interface CreateJobOptions {
   model_size?: string;
   max_line_chars?: number;
   punctuation_threshold?: number;
+  tier?: string;
+  llm_correction_enabled?: boolean;
 }
 
 function uploadSingle(
@@ -462,4 +464,29 @@ export function getWork(workId: number): Promise<Work> {
 /** DELETE /api/works/{work_id} — 從作品庫移除（job 本身不受影響） */
 export function deleteWork(workId: number): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/works/${workId}`, { method: "DELETE" });
+}
+
+/* ============================================================
+   詞庫（dictionary）
+   ============================================================ */
+
+/** GET /api/dictionary — 目前 session 的詞庫詞條 */
+export function getDictionary(): Promise<{ terms: string[] }> {
+  return request<{ terms: string[] }>("/dictionary");
+}
+
+/** POST /api/dictionary — 新增詞條，回傳完整清單與實際新增的詞條 */
+export function addDictionaryTerms(terms: string[]): Promise<{ terms: string[]; added: string[] }> {
+  return request<{ terms: string[]; added: string[] }>("/dictionary", {
+    method: "POST",
+    body: JSON.stringify({ terms }),
+  });
+}
+
+/** DELETE /api/dictionary — 移除單一詞條 */
+export function removeDictionaryTerm(term: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>("/dictionary", {
+    method: "DELETE",
+    body: JSON.stringify({ term }),
+  });
 }

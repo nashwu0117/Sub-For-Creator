@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import auth as auth_router
 from app.api import config as config_router
+from app.api import dictionary as dictionary_router
 from app.api import export as export_router
 from app.api import fonts as fonts_router
 from app.api import health as health_router
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     for router in (
         health_router.router,
         config_router.router,
+        dictionary_router.router,
         jobs_router.router,
         uploads_router.router,
         subtitles_router.router,
