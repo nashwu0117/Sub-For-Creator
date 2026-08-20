@@ -31,7 +31,7 @@ The project is free to use, self-hostable, and released under AGPL-3.0. The publ
 - **Queue visibility**: Redis-backed jobs show queue position, progress, and an estimated wait time.
 - **Multi-GPU scaling**: Dedicated transcribe/render queues let multiple workers each bind their own GPU (or run CPU-only by default).
 - **Prometheus monitoring**: `/api/metrics` exposes HTTP, queue, GPU, and storage metrics, with an optional docker-compose monitoring stack (Prometheus + Grafana).
-- **ASR accuracy tiers**: VAD voice detection and beam size / temperature / tier (lite / standard / pro) tuning; audio trimming is more precise.
+- **ASR accuracy tiers**: VAD voice detection, beam size / temperature / tier (lite / standard / pro) tuning, optional denoising and loudness normalization, a user dictionary (initial_prompt), and LLM-based correction of homophone errors.
 - **Automatic cleanup**: Processed files are retained for 48 hours by default and then permanently deleted.
 
 ## Architecture
@@ -167,7 +167,10 @@ Read the [English privacy policy](docs/PRIVACY.en.md) and [English terms of serv
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/health` | Health check |
-| GET | `/api/config` | Upload limits and supported languages |
+| GET | `/api/config` | Upload limits, supported languages, and ASR options |
+| GET | `/api/dictionary` | Get the user dictionary (used for initial_prompt / LLM correction) |
+| POST | `/api/dictionary` | Add terms to the user dictionary |
+| DELETE | `/api/dictionary` | Remove a term from the user dictionary |
 | POST | `/api/jobs` | Upload a video/audio file and create a job |
 | GET | `/api/jobs/{job_id}` | Read job status and progress |
 | GET | `/api/jobs/{job_id}/subtitles` | Get subtitle data with word timestamps |
@@ -223,10 +226,10 @@ Completed in v2:
 - Multi-GPU horizontal scaling (dedicated transcribe/render queues)
 - Prometheus monitoring stack (`/api/metrics` + Grafana overlay)
 - ASR accuracy tiers: VAD + beam size / temperature presets
+- ASR phase 2: denoising, loudness normalization, user dictionary (initial_prompt), LLM correction
 
 Planned next:
 
-- ASR phase 2: denoising, user dictionary (initial_prompt), LLM correction
 - Saved subtitle styles and reusable presets
 
 ## Contributing

@@ -44,11 +44,30 @@ Returns upload limits and supported languages for the frontend:
   "max_queue": 50,
   "supported_languages": ["zh", "en", "ja", "ko", "..."],
   "session_remaining_seconds": 3000,
-  "default_options": { "max_line_chars": 16, "model_size": "large-v3" }
+  "tiers": ["lite", "standard", "pro"],
+  "llm_available": true,
+  "default_options": {
+    "max_line_chars": 16,
+    "model_size": "medium",
+    "tier": "standard",
+    "denoise_enabled": true,
+    "loudnorm_enabled": true,
+    "llm_correction_enabled": false
+  }
 }
 ```
 
-`session_remaining_seconds` is the remaining upload time for the session today.
+`session_remaining_seconds` is the remaining upload time for the session today. `default_options` holds the resolved ASR options for the current tier (the frontend may omit them when uploading).
+
+### User dictionary
+
+The dictionary is a JSON file shaped `{"terms": [...]}` (default `SFC_DICTIONARY_PATH`, `./data/user_dictionary.json`) used to build the ASR `initial_prompt` and the LLM correction glossary. All requests require `X-Session-Token`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/dictionary` | List all terms → `200 { "terms": ["OpenAI", "WhisperX"] }` |
+| POST | `/api/dictionary` | Add terms: body `{ "terms": ["OpenAI"] }` → `200 { "terms": [...], "added": ["OpenAI"] }` (`added` contains only newly added terms; case-insensitive dedupe); `422` for an empty list, control characters, or terms over 100 characters |
+| DELETE | `/api/dictionary` | Remove one term: body `{ "term": "OpenAI" }` (case-insensitive) → `200 { "ok": true }` |
 
 ### `POST /api/jobs` — Upload video or audio
 
@@ -58,7 +77,7 @@ Returns upload limits and supported languages for the frontend:
 |---|---|
 | `file` | Video or audio file (required) |
 | `language` | Language code; `auto` or omitted means automatic detection |
-| `options` | JSON string such as `{ "model_size": "large-v3", "max_line_chars": 16 }` (optional; defaults are used when omitted) |
+| `options` | JSON string such as `{ "model_size": "large-v3", "max_line_chars": 16, "tier": "pro", "denoise_enabled": true, "loudnorm_enabled": true, "llm_correction_enabled": false }` (optional; defaults are used when omitted) |
 
 The server validates file size, media duration, the session's daily allowance, and queue capacity.
 
@@ -72,13 +91,22 @@ Possible failures: `413` (file too large), `429` (quota or queue full), `400` (u
 200 {
   "job_id": "...",
   "status": "queued" | "processing" | "done" | "failed",
-  "stage": null | "extracting" | "transcribing" | "segmenting",
+  "stage": null | "extracting" | "preprocessing" | "transcribing" | "segmenting",
   "progress": 0.0,
   "queue_position": 2,
   "error": null | "string",
   "created_at": "ISO8601",
   "expires_at": "ISO8601",
-  "meta": { "filename": "x.mp4", "duration": 123.4, "language": "en", "model_size": "large-v3" }
+  "meta": {
+    "filename": "x.mp4",
+    "duration": 123.4,
+    "language": "en",
+    "model_size": "large-v3",
+    "tier": "standard",
+    "denoise_enabled": true,
+    "loudnorm_enabled": true,
+    "llm_correction_enabled": false
+  }
 }
 ```
 
@@ -197,6 +225,9 @@ Possible failures: `400` (not `.ttf`/`.otf`), `413` (file too large), `422` (emp
 | File TTL | 48 h | `SFC_TTL_HOURS` |
 | Upload rate | 5 per 60 s | `SFC_UPLOAD_RATE_LIMIT` |
 | ASR accuracy tier | `standard` | `SFC_TIER` (`lite` / `standard` / `pro`); `SFC_BEAM_SIZE`, `SFC_TEMPERATURE`, `SFC_VAD_ENABLED` override (unset = tier preset) |
+| Denoise / loudness normalization | tier preset | `SFC_DENOISE_ENABLED`, `SFC_LOUDNORM_ENABLED` (`true`/`false`; unset = tier preset); `SFC_NOISE_REDUCTION_STRENGTH` (noisereduce `prop_decrease`, default `0.75`) |
+| User dictionary | `./data/user_dictionary.json` | `SFC_DICTIONARY_PATH`; `SFC_INITIAL_PROMPT_MAX_CHARS` (default `1500`) |
+| LLM correction | tier preset (pro on) | `SFC_LLM_CORRECTION_ENABLED`, `SFC_LLM_PROVIDER` (`ollama` / `openai`), `SFC_LLM_MODEL` (default `qwen2.5:7b`), `SFC_OLLAMA_URL` (default `http://localhost:11434`), `SFC_LLM_API_KEY`, `SFC_LLM_TIMEOUT_SECONDS` (default `120`) |
 | Auth cookie name | `sfc_session` | `SFC_AUTH_COOKIE_NAME` |
 | Auth cookie Secure | `false` | `SFC_AUTH_COOKIE_SECURE` (set `true` on HTTPS) |
 | Auth signing secret | dev default | `SFC_AUTH_SECRET` (change when deploying) |
@@ -208,14 +239,16 @@ A `429` response has the shape `{ "detail": "...", "retry_after_seconds": 60 }`.
 ## Job lifecycle
 
 ```text
-queued → processing(extracting → transcribing → segmenting) → done
-                                                          ↘ failed (error contains the message)
+queued → processing(extracting → preprocessing → transcribing → segmenting) → done
+                                                                    ↘ failed (error contains the message)
 done → (TTL expires) → 410
 ```
 
+The `preprocessing` stage only appears when the job has denoising or loudness normalization enabled (`denoise_enabled` / `loudnorm_enabled`). LLM correction is best-effort: any failure (connection, parse, validation) keeps the original transcript and never fails the job.
+
 ## Backend data model
 
-`jobs` table: `id (uuid str, pk)`, `session_token`, `status`, `stage`, `progress`, `error`, `filename`, `language`, `model_size`, `duration`, `created_at`, `completed_at`, `expires_at`, and `segments_json` (complete subtitle data after processing, including words). `queue_position` is calculated live by the API and is not stored.
+`jobs` table: `id (uuid str, pk)`, `session_token`, `status`, `stage`, `progress`, `error`, `filename`, `language`, `model_size`, `tier`, `denoise_enabled`, `loudnorm_enabled`, `llm_correction_enabled`, `duration`, `created_at`, `completed_at`, `expires_at`, and `segments_json` (complete subtitle data after processing, including words). `queue_position` is calculated live by the API and is not stored.
 
 `usage` table (rate limiting): `session_token`, `date`, and `uploaded_seconds` (upserted).
 

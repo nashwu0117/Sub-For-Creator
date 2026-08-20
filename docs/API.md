@@ -44,9 +44,30 @@
   "max_queue": 0,
   "supported_languages": ["zh", "en", "ja", "ko", ...],
   "session_remaining_seconds": 0,   // 0 = 該 session 無每日額度
-  "default_options": { "max_line_chars": 16, "model_size": "large-v3" }
+  "tiers": ["lite", "standard", "pro"],
+  "llm_available": true,            // LLM 校正可用（ollama 或已設 SFC_LLM_API_KEY）
+  "default_options": {
+    "max_line_chars": 16,
+    "model_size": "medium",
+    "tier": "standard",
+    "denoise_enabled": true,
+    "loudnorm_enabled": true,
+    "llm_correction_enabled": false
+  }
 }
 ```
+
+`default_options` 為目前 tier 預設解析後的 ASR 選項（前端上傳時可省略，直接沿用）。
+
+### 使用者詞庫（dictionary）
+
+詞庫是 `{"terms": [...]}` 的 JSON 檔（預設 `SFC_DICTIONARY_PATH`，`./data/user_dictionary.json`），用於建構 ASR `initial_prompt` 與 LLM 校正的詞彙表。所有請求都需帶 `X-Session-Token`。
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| GET | `/api/dictionary` | 取得全部詞條 → `200 { "terms": ["OpenAI", "WhisperX"] }` |
+| POST | `/api/dictionary` | 新增詞條：body `{ "terms": ["OpenAI"] }` → `200 { "terms": [...], "added": ["OpenAI"] }`（`added` 只含實際新增者，大小寫不敏感去重）；`422` 空清單 / 詞條含控制字元 / 超過 100 字元 |
+| DELETE | `/api/dictionary` | 刪除一個詞條：body `{ "term": "OpenAI" }`（大小寫不敏感）→ `200 { "ok": true }` |
 
 ### `POST /api/jobs` — 上傳影片/音檔
 
@@ -56,7 +77,7 @@ multipart/form-data：
 |---|---|
 | `file` | 影片或音檔（必填） |
 | `language` | 語言代碼，`auto` 或省略 = 自動偵測 |
-| `options` | JSON 字串：`{ "model_size": "large-v3", "max_line_chars": 16 }`（可省略，用預設） |
+| `options` | JSON 字串：`{ "model_size": "large-v3", "max_line_chars": 16, "tier": "pro", "denoise_enabled": true, "loudnorm_enabled": true, "llm_correction_enabled": false }`（可省略，用預設） |
 
 伺服器驗證（僅在對應 `SFC_` 變數 > 0 時啟用）：檔案大小 ≤ `MAX_UPLOAD_MB`、ffprobe 時長 ≤ `MAX_DURATION_MIN`、session 每日上傳秒數額度、佇列長度 ≤ `MAX_QUEUE`；變數為 0（預設）時不做限制。
 
@@ -107,13 +128,22 @@ multipart/form-data：
 200 {
   "job_id": "...",
   "status": "queued" | "processing" | "done" | "failed",
-  "stage": null | "extracting" | "transcribing" | "segmenting",
+  "stage": null | "extracting" | "preprocessing" | "transcribing" | "segmenting",
   "progress": 0.0,          // 0-100
   "queue_position": 2,      // queued 時有效
   "error": null | "string",
   "created_at": "ISO8601",
   "expires_at": "ISO8601",  // TTL 期限
-  "meta": { "filename": "x.mp4", "duration": 123.4, "language": "zh", "model_size": "large-v3" }
+  "meta": {
+    "filename": "x.mp4",
+    "duration": 123.4,
+    "language": "zh",
+    "model_size": "large-v3",
+    "tier": "standard",
+    "denoise_enabled": true,
+    "loudnorm_enabled": true,
+    "llm_correction_enabled": false
+  }
 }
 ```
 
@@ -229,6 +259,9 @@ multipart/form-data：`file`（.ttf / .otf，必填）。上限 `SFC_MAX_FONT_MB
 | 上傳頻率 | 0 次/60s | `SFC_UPLOAD_RATE_LIMIT` |
 | render 逾時 | 3600 s | `SFC_RENDER_TIMEOUT_SECONDS` |
 | ASR 精準度 tier | `standard` | `SFC_TIER`（`lite` / `standard` / `pro`）；`SFC_BEAM_SIZE`、`SFC_TEMPERATURE`、`SFC_VAD_ENABLED` 可覆寫（留空 = 沿用 tier 預設） |
+| 降噪 / 響度標準化 | tier 預設 | `SFC_DENOISE_ENABLED`、`SFC_LOUDNORM_ENABLED`（`true`/`false`，留空 = 沿用 tier 預設）；`SFC_NOISE_REDUCTION_STRENGTH`（noisereduce `prop_decrease`，預設 `0.75`） |
+| 使用者詞庫 | `./data/user_dictionary.json` | `SFC_DICTIONARY_PATH`；`SFC_INITIAL_PROMPT_MAX_CHARS`（預設 `1500`） |
+| LLM 校正 | tier 預設（pro 開） | `SFC_LLM_CORRECTION_ENABLED`、`SFC_LLM_PROVIDER`（`ollama` / `openai`）、`SFC_LLM_MODEL`（預設 `qwen2.5:7b`）、`SFC_OLLAMA_URL`（預設 `http://localhost:11434`）、`SFC_LLM_API_KEY`、`SFC_LLM_TIMEOUT_SECONDS`（預設 `120`） |
 | 帳號 cookie 名稱 | `sfc_session` | `SFC_AUTH_COOKIE_NAME` |
 | 帳號 cookie Secure | `false` | `SFC_AUTH_COOKIE_SECURE`（HTTPS 部署設 `true`） |
 | 帳號簽章密鑰 | dev 預設值 | `SFC_AUTH_SECRET`（部署務必改） |
@@ -240,14 +273,16 @@ multipart/form-data：`file`（.ttf / .otf，必填）。上限 `SFC_MAX_FONT_MB
 ## 作業生命週期
 
 ```
-queued → processing(extracting → transcribing → segmenting) → done
-                                                          ↘ failed (error 欄位含訊息)
+queued → processing(extracting → preprocessing → transcribing → segmenting) → done
+                                                                    ↘ failed (error 欄位含訊息)
 done → (TTL 到期) → 410
 ```
 
+`preprocessing` 階段僅在該作業啟用降噪或響度標準化時出現（`denoise_enabled` / `loudnorm_enabled`）。LLM 校正為 best-effort：任何失敗（連線、解析、驗證）都會保留原始逐字稿，不影響作業完成。
+
 ## 資料模型（後端）
 
-`jobs` 表：`id (uuid str, pk)`、`session_token`、`status`、`stage`、`progress`、`error`、`filename`、`language`、`model_size`、`duration`、`created_at`、`completed_at`、`expires_at`、`segments_json`（完成後的完整字幕資料，含 words）。`queue_position` 不落庫，由 API 依 active 作業即時計算。
+`jobs` 表：`id (uuid str, pk)`、`session_token`、`status`、`stage`、`progress`、`error`、`filename`、`language`、`model_size`、`tier`、`denoise_enabled`、`loudnorm_enabled`、`llm_correction_enabled`、`duration`、`created_at`、`completed_at`、`expires_at`、`segments_json`（完成後的完整字幕資料，含 words）。`queue_position` 不落庫，由 API 依 active 作業即時計算。
 
 `usage` 表（限流用）：`session_token`、`date`、`uploaded_seconds`（upsert）。
 

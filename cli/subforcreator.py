@@ -29,6 +29,7 @@ if str(_BACKEND_DIR) not in sys.path:
 try:
     from app.core import (
         LLMConfig,
+        Segment,
         SFCError,
         TranscriptionResult,
         build_initial_prompt,
@@ -356,9 +357,19 @@ def run(args) -> int:
             )
 
         step(3, total, "Segmenting...", args.quiet)
-        segments = segment_words(
-            raw.all_words(), raw.language, max_chars=args.max_line_chars
-        )
+        words = raw.all_words()
+        if not words:
+            # Silent input is a valid outcome (e.g. pure silence or music with
+            # VAD on) — emit an empty subtitle file instead of crashing.
+            if not args.quiet:
+                print(
+                    "  warning: no speech detected; writing empty subtitle file",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            segments: list[Segment] = []
+        else:
+            segments = segment_words(words, raw.language, max_chars=args.max_line_chars)
 
         if llm_correction:
             llm_kwargs = {

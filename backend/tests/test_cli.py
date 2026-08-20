@@ -103,3 +103,87 @@ def test_burn(mp4_file, tmp_path):
     assert result.returncode == 0, result.stderr
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+# ---------------------------------------------------------------- accuracy flags
+
+
+def test_cli_parser_accepts_accuracy_flags():
+    from cli.subforcreator import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "video.mp4",
+            "--tier", "pro",
+            "--denoise",
+            "--no-loudnorm",
+            "--dictionary", "terms.json",
+            "--llm-correction",
+            "--llm-provider", "openai",
+            "--ollama-url", "http://llm:8080",
+        ]
+    )
+    assert args.tier == "pro"
+    assert args.denoise is True
+    assert args.loudnorm is False
+    assert args.dictionary == Path("terms.json")
+    assert args.llm_correction is True
+    assert args.llm_provider == "openai"
+    assert args.ollama_url == "http://llm:8080"
+
+
+def test_cli_parser_accuracy_defaults():
+    from cli.subforcreator import build_parser
+
+    args = build_parser().parse_args(["video.mp4"])
+    assert args.denoise is None
+    assert args.loudnorm is None
+    assert args.dictionary is None
+    assert args.llm_correction is None
+    assert args.llm_provider is None
+    assert args.ollama_url is None
+
+
+def test_cli_parser_rejects_conflicting_accuracy_flags():
+    from cli.subforcreator import build_parser
+
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["video.mp4", "--denoise", "--no-denoise"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["video.mp4", "--loudnorm", "--no-loudnorm"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["video.mp4", "--llm-correction", "--no-llm-correction"])
+
+
+def test_mock_tier_lite(wav_file, tmp_path):
+    out = tmp_path / "out.srt"
+    result = run_cli(wav_file, "--mock", "--tier", "lite", "-o", out)
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+    assert "-->" in out.read_text(encoding="utf-8")
+
+
+def test_mock_denoise_flag(wav_file, tmp_path):
+    out = tmp_path / "out.srt"
+    result = run_cli(
+        wav_file, "--mock", "--denoise", "--no-loudnorm", "--no-llm-correction", "-o", out
+    )
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+
+
+def test_mock_dictionary_flag(wav_file, tmp_path):
+    dictionary = tmp_path / "terms.json"
+    dictionary.write_text('{"terms": ["OpenAI", "WhisperX"]}', encoding="utf-8")
+    out = tmp_path / "out.srt"
+    result = run_cli(wav_file, "--mock", "--dictionary", dictionary, "-o", out)
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+
+
+def test_mock_no_llm_correction(wav_file, tmp_path):
+    out = tmp_path / "out.srt"
+    result = run_cli(wav_file, "--mock", "--no-llm-correction", "-o", out)
+    assert result.returncode == 0, result.stderr
+    assert out.exists()

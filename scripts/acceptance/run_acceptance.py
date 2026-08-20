@@ -47,6 +47,7 @@ def run_cli(args: list[str], env: dict | None = None, timeout: int = 900) -> sub
         {
             "SFC_ASR_BACKEND": "faster-whisper",
             "SFC_WHISPER_MODEL": MODEL,
+            "SFC_LLM_CORRECTION_ENABLED": "false",
         }
     )
     if env:
@@ -58,6 +59,7 @@ def run_cli(args: list[str], env: dict | None = None, timeout: int = 900) -> sub
         capture_output=True,
         text=True,
         timeout=timeout,
+        check=False,
     )
 
 
@@ -113,24 +115,29 @@ def s1_vad(tmp: Path) -> None:
 
 
 def s2_determinism(tmp: Path) -> None:
-    inp = FIXTURES / "tone_silence_tone.wav"
+    inp = FIXTURES / "speech_silence_speech.wav"
     t0 = time.time()
     a = tmp / "det_a.srt"
-    r1 = run_cli([str(inp), "--lang", "zh", "--tier", "pro", "-o", str(a)])
+    r1 = run_cli([str(inp), "--lang", "en", "--tier", "pro", "-o", str(a)])
     b = tmp / "det_b.srt"
-    r2 = run_cli([str(inp), "--lang", "zh", "--tier", "pro", "-o", str(b)])
+    r2 = run_cli([str(inp), "--lang", "en", "--tier", "pro", "-o", str(b)])
     elapsed = time.time() - t0
 
     txt_a = a.read_text(encoding="utf-8") if a.exists() else ""
     txt_b = b.read_text(encoding="utf-8") if b.exists() else ""
-    ok = r1.returncode == 0 and r2.returncode == 0 and txt_a == txt_b and bool(txt_a)
+    ok = (
+        r1.returncode == 0
+        and r2.returncode == 0
+        and txt_a == txt_b
+        and len(parse_srt(a)) > 0
+    )
     results.append(
         {
             "id": "S2 Determinism",
             "ok": ok,
             "detail": (
                 f"pro tier (beam 10, temperature 0) twice -> identical: {txt_a == txt_b}; "
-                f"segments: {len(parse_srt(a))}; total 2 runs {elapsed:.1f}s"
+                f"segments: {len(parse_srt(a)) if a.exists() else 'N/A'}; total 2 runs {elapsed:.1f}s"
             ),
             "exit_codes": (r1.returncode, r2.returncode),
         }
@@ -143,7 +150,7 @@ def s2_determinism(tmp: Path) -> None:
 def noise_floor_db(path: Path) -> float:
     proc = subprocess.run(
         ["ffmpeg", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,
     )
     for line in proc.stderr.splitlines():
         if "mean_volume" in line:
@@ -167,9 +174,9 @@ def s3_denoise(tmp: Path) -> None:
     floor_out = noise_floor_db(denoised)
     ok = floor_out < floor_in - 5  # at least 5 dB noise-floor reduction
 
-    # pipeline smoke test: CLI with --denoise runs end to end
+    # pipeline smoke test: CLI with --denoise runs end to end on speech+noise
     out = tmp / "denoise.srt"
-    r = run_cli([str(noisy), "--lang", "zh", "--denoise", "-o", str(out)])
+    r = run_cli([str(FIXTURES / "speech_noisy.wav"), "--lang", "en", "--denoise", "-o", str(out)])
     segs = parse_srt(out) if out.exists() else []
 
     results.append(
@@ -194,27 +201,40 @@ def s4_dictionary(tmp: Path) -> None:
     dict_path = tmp / "user_dictionary.json"
     dict_path.write_text(json.dumps({"terms": ["OurWay", "Nash", "WhisperX"]}, ensure_ascii=False), encoding="utf-8")
 
+    # VAD off so the model hallucinates on silence; initial_prompt from the
+    # dictionary biases the hallucination toward the prompt terms.
     out_with = tmp / "dict_on.srt"
     r1 = run_cli(
-        [str(FIXTURES / "silence.wav"), "--lang", "zh", "--dictionary", str(dict_path), "-o", str(out_with)]
+        [str(FIXTURES / "silence.wav"), "--lang", "zh", "--no-vad",
+         "--dictionary", str(dict_path), "-o", str(out_with)]
     )
     txt_with = out_with.read_text(encoding="utf-8") if out_with.exists() else ""
 
     out_without = tmp / "dict_off.srt"
-    r2 = run_cli([str(FIXTURES / "silence.wav"), "--lang", "zh", "-o", str(out_without)])
+    r2 = run_cli([str(FIXTURES / "silence.wav"), "--lang", "zh", "--no-vad", "-o", str(out_without)])
     txt_without = out_without.read_text(encoding="utf-8") if out_without.exists() else ""
 
     # initial_prompt on silence biases hallucination toward prompt terms;
-    # the acceptance is that the prompt term appears ONLY when the dictionary is used
-    term = "OurWay"
-    ok = term in txt_with and r1.returncode == 0 and r2.returncode == 0
+    # Whisper tokenization may split a term (e.g. "OurWay" -> "Way"), so the
+    # acceptance is: at least one dictionary term appears in the with-dict
+    # output and none appears in the without-dict output.
+    terms = ["OurWay", "Nash", "WhisperX"]
+    hit_with = [t for t in terms if t in txt_with]
+    hit_without = [t for t in terms if t in txt_without]
+    ok = (
+        r1.returncode == 0
+        and r2.returncode == 0
+        and bool(hit_with)
+        and not hit_without
+        and len(parse_srt(out_with)) > 0
+    )
     results.append(
         {
             "id": "S4 Dictionary",
             "ok": ok,
             "detail": (
-                f"term {term!r} in output: with dictionary = {term in txt_with}, "
-                f"without = {term in txt_without}; "
+                f"dictionary terms {terms} matched: with = {hit_with or 'none'}, "
+                f"without = {hit_without or 'none'}; "
                 f"with: {len(parse_srt(out_with))} segs, without: {len(parse_srt(out_without))} segs"
             ),
             "exit_codes": (r1.returncode, r2.returncode),
@@ -232,7 +252,7 @@ class _FakeOllama(BaseHTTPRequestHandler):
     replaced, and (compared against a non-LLM run) timing is preserved.
     """
 
-    def do_POST(self) -> None:  # noqa: N802 (http.server API)
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length) or b"{}")
         user_msg = ""
@@ -270,15 +290,15 @@ def s5_llm(tmp: Path) -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
-    inp = FIXTURES / "tone_silence_tone.wav"
+    inp = FIXTURES / "speech_silence_speech.wav"
     t0 = time.time()
     out_llm = tmp / "llm.srt"
     env = {"SFC_LLM_CORRECTION_ENABLED": "true", "SFC_OLLAMA_URL": f"http://127.0.0.1:{port}"}
-    r1 = run_cli([str(inp), "--lang", "zh", "-o", str(out_llm)], env=env)
+    r1 = run_cli([str(inp), "--lang", "en", "-o", str(out_llm)], env=env)
     t_llm = time.time() - t0
 
     out_plain = tmp / "plain.srt"
-    r2 = run_cli([str(inp), "--lang", "zh", "-o", str(out_plain)])
+    r2 = run_cli([str(inp), "--lang", "en", "-o", str(out_plain)])
     server.shutdown()
 
     segs_llm = parse_srt(out_llm) if out_llm.exists() else []
@@ -338,7 +358,19 @@ def main() -> int:
                 return 1
         for name in wanted:
             print(f"== running {name} ==", flush=True)
-            runners[name](tmp)
+            try:
+                runners[name](tmp)
+            except Exception as exc:  # noqa: BLE001 - acceptance runner must report, not crash
+                import traceback
+                traceback.print_exc()
+                results.append(
+                    {
+                        "id": name,
+                        "ok": False,
+                        "detail": f"scenario crashed: {exc.__class__.__name__}: {exc}",
+                        "exit_codes": (),
+                    }
+                )
     finally:
         if args.keep:
             print("workdir kept at", tmp)

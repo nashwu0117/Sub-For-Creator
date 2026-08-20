@@ -31,7 +31,7 @@
 - **剪映草稿匯出**：一鍵匯出 CapCut 草稿 Zip，直接匯入剪映繼續剪輯。
 - **多 GPU 橫向擴展**：Celery 佇列分離（transcribe / render），多 worker 可各綁不同 GPU；預設亦可純 CPU 跑。
 - **Prometheus 監控**：`/api/metrics` 輸出 HTTP、佇列、GPU、儲存指標，附 docker-compose 監控疊層（Grafana + Prometheus）。
-- **ASR 精準度強化**：VAD 語音偵測、beam size / temperature / 精準度 tier（lite / standard / pro）可調，語音開頭結尾截斷更準。
+- **ASR 精準度強化**：VAD 語音偵測、beam size / temperature / 精準度 tier（lite / standard / pro）可調，語音開頭結尾截斷更準；可選降噪（denoise）與響度標準化（loudnorm）前處理、使用者詞庫（initial_prompt）與 LLM 校正（同音錯字修正）。
 - **排隊機制**：上傳後進入 Redis 佇列，頁面即時顯示排隊位置與預估等待時間。
 - **檔案自動清理**：處理完成後保留 48 小時，到期自動永久刪除。
 
@@ -169,7 +169,10 @@ npm run dev        # http://localhost:5173，vite proxy 指向 :8000
 | 方法 | 路徑 | 說明 |
 |---|---|---|
 | GET | `/api/health` | 健康檢查 |
-| GET | `/api/config` | 上傳限制與支援語言 |
+| GET | `/api/config` | 上傳限制、支援語言與 ASR 選項 |
+| GET | `/api/dictionary` | 取得使用者詞庫（initial_prompt / LLM 校正用） |
+| POST | `/api/dictionary` | 新增詞庫詞條 |
+| DELETE | `/api/dictionary` | 刪除詞庫詞條 |
 | POST | `/api/jobs` | 上傳影片/音檔，建立作業（>8 MB 自動分片） |
 | POST | `/api/jobs/uploads` | 開啟分片上傳 session |
 | POST | `/api/jobs/uploads/{id}/chunks` | 上傳單一分片 |
@@ -240,7 +243,7 @@ v1 已完成：
 - ~~帳號系統與作品收藏~~ ✅
 - ~~剪映（CapCut）草稿匯出~~ ✅
 - ~~多 GPU 橫向擴展~~ ✅
-- ASR 精準度強化：VAD + 解碼參數 ✅ 已實作；降噪 / 詞庫（initial_prompt）/ LLM 校正規劃中
+- ASR 精準度強化：VAD + 解碼參數 ✅ 已實作；降噪 / 響度標準化 / 詞庫（initial_prompt）/ LLM 校正 ✅ 已實作
 
 ## 貢獻
 

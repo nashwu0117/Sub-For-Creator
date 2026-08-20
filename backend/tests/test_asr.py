@@ -3,11 +3,15 @@
 import pytest
 
 from app.core.asr import (
+    TIER_PRESETS,
+    VALID_TIERS,
     ASRBackend,
+    ASRConfig,
     FasterWhisperBackend,
     MockBackend,
     WhisperXBackend,
     get_backend,
+    resolve_asr_config,
 )
 from app.core.exceptions import ASRError
 
@@ -138,3 +142,86 @@ def test_whisperx_and_faster_whisper_are_lazy():
     FasterWhisperBackend()
     assert "whisperx" not in sys.modules
     assert "faster_whisper" not in sys.modules
+
+
+# --- tier presets + resolve_asr_config (accuracy enhancements) -------------
+
+
+def test_tier_presets_accuracy_enhancements():
+    assert TIER_PRESETS["lite"]["denoise_enabled"] is False
+    assert TIER_PRESETS["lite"]["loudnorm_enabled"] is False
+    assert TIER_PRESETS["lite"]["llm_correction_enabled"] is False
+    assert TIER_PRESETS["standard"]["denoise_enabled"] is True
+    assert TIER_PRESETS["standard"]["loudnorm_enabled"] is True
+    assert TIER_PRESETS["standard"]["llm_correction_enabled"] is False
+    assert TIER_PRESETS["pro"]["denoise_enabled"] is True
+    assert TIER_PRESETS["pro"]["loudnorm_enabled"] is True
+    assert TIER_PRESETS["pro"]["llm_correction_enabled"] is True
+
+
+def test_valid_tiers_tuple():
+    assert VALID_TIERS == ("lite", "standard", "pro")
+
+
+def test_resolve_accuracy_flags_follow_tier():
+    lite = resolve_asr_config(tier="lite")
+    assert lite.denoise_enabled is False
+    assert lite.loudnorm_enabled is False
+    assert lite.llm_correction_enabled is False
+
+    standard = resolve_asr_config(tier="standard")
+    assert standard.denoise_enabled is True
+    assert standard.loudnorm_enabled is True
+    assert standard.llm_correction_enabled is False
+
+    pro = resolve_asr_config(tier="pro")
+    assert pro.denoise_enabled is True
+    assert pro.loudnorm_enabled is True
+    assert pro.llm_correction_enabled is True
+
+
+def test_resolve_accuracy_explicit_args_win_over_tier():
+    cfg = resolve_asr_config(
+        tier="pro",
+        denoise_enabled=False,
+        loudnorm_enabled=False,
+        llm_correction_enabled=False,
+    )
+    assert cfg.denoise_enabled is False
+    assert cfg.loudnorm_enabled is False
+    assert cfg.llm_correction_enabled is False
+
+
+def test_resolve_accuracy_env_wins_over_tier(monkeypatch):
+    monkeypatch.setenv("SFC_DENOISE_ENABLED", "false")
+    monkeypatch.setenv("SFC_LOUDNORM_ENABLED", "false")
+    monkeypatch.setenv("SFC_LLM_CORRECTION_ENABLED", "true")
+    cfg = resolve_asr_config(tier="pro")
+    assert cfg.denoise_enabled is False
+    assert cfg.loudnorm_enabled is False
+    assert cfg.llm_correction_enabled is True
+
+
+def test_resolve_accuracy_env_true_variants(monkeypatch):
+    for raw in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("SFC_DENOISE_ENABLED", raw)
+        assert resolve_asr_config(tier="lite").denoise_enabled is True
+
+
+def test_resolve_model_env_falls_back_to_tier(monkeypatch):
+    monkeypatch.delenv("SFC_WHISPERX_MODEL", raising=False)
+    cfg = resolve_asr_config(tier="lite", model_env="SFC_WHISPERX_MODEL")
+    assert cfg.model_size == "small"
+
+    monkeypatch.setenv("SFC_WHISPERX_MODEL", "tiny")
+    cfg = resolve_asr_config(tier="pro", model_env="SFC_WHISPERX_MODEL")
+    assert cfg.model_size == "tiny"
+
+
+def test_resolve_returns_asr_config_with_accuracy_fields():
+    cfg = resolve_asr_config(tier="pro")
+    assert isinstance(cfg, ASRConfig)
+    assert cfg.tier == "pro"
+    assert cfg.denoise_enabled is True
+    assert cfg.loudnorm_enabled is True
+    assert cfg.llm_correction_enabled is True
