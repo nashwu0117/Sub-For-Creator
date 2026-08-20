@@ -5,10 +5,13 @@ Run from the repo root: ``python -m pytest backend/tests/test_exporters.py``.
 
 from __future__ import annotations
 
+import io
+import json
 import re
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -22,6 +25,7 @@ from app.core.models import Segment, TranscriptionResult, Word  # noqa: E402
 from app.exporters import (  # noqa: E402
     AssStyle,
     export_ass,
+    export_capcut,
     export_fcpxml,
     export_srt,
     export_text,
@@ -422,6 +426,173 @@ def test_fcpxml_empty_result():
     root = ET.fromstring(export_fcpxml(make_result()))
     spine = root.find("library/event/project/sequence/spine")
     assert [c.tag for c in list(spine)] == ["asset-clip"]
+
+
+# ---------------------------------------------------------------------------
+# CapCut draft
+# ---------------------------------------------------------------------------
+
+
+def _capcut_content(data: bytes, draft: str = "video") -> dict:
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        return json.loads(zf.read(f"{draft}/draft_content.json"))
+
+
+def test_capcut_zip_contains_required_files():
+    data = export_capcut(two_segment_result())
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert set(zf.namelist()) == {
+            "video/draft_content.json",
+            "video/draft_info.json",
+            "video/draft_meta_info.json",
+        }
+
+
+def test_capcut_draft_info_matches_draft_content():
+    data = export_capcut(two_segment_result())
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.read("video/draft_info.json") == zf.read("video/draft_content.json")
+
+
+def test_capcut_draft_content_parses_and_has_text_track():
+    content = _capcut_content(export_capcut(two_segment_result()))
+    assert content["duration"] == 5_000_000  # last segment end, no media_duration
+    assert content["fps"] == 30.0
+    assert content["canvas_config"] == {"width": 1920, "height": 1080, "ratio": "original"}
+    assert content["id"]
+    tracks = content["tracks"]
+    assert len(tracks) == 1
+    track = tracks[0]
+    assert track["type"] == "text"
+    assert track["name"] == "text"
+    assert len(track["segments"]) == 2
+
+
+def test_capcut_timestamps_are_microseconds():
+    content = _capcut_content(export_capcut(two_segment_result()))
+    segs = content["tracks"][0]["segments"]
+    assert segs[0]["target_timerange"] == {"start": 0, "duration": 2_500_000}
+    assert segs[1]["target_timerange"] == {"start": 3_000_000, "duration": 2_000_000}
+    assert segs[0]["source_timerange"] == {"start": 0, "duration": 2_500_000}
+
+
+def test_capcut_text_materials_hold_segment_text():
+    content = _capcut_content(export_capcut(two_segment_result()))
+    texts = content["materials"]["texts"]
+    assert len(texts) == 2
+    segs = content["tracks"][0]["segments"]
+    for seg, mat in zip(segs, texts, strict=True):
+        assert seg["material_id"] == mat["id"]
+        assert mat["type"] == "text"
+        parsed = json.loads(mat["content"])
+        assert parsed["text"] in ("你好，世界！", "Hello world")
+        assert parsed["styles"][0]["range"] == [0, len(parsed["text"])]
+        assert parsed["styles"][0]["fill"]["content"]["solid"]["color"] == [1.0, 1.0, 1.0]
+
+
+def test_capcut_draft_meta_info():
+    data = export_capcut(two_segment_result())
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        meta = json.loads(zf.read("video/draft_meta_info.json"))
+    assert meta["draft_name"] == "video"
+    assert meta["tm_duration"] == 5_000_000
+    assert meta["draft_id"]
+    assert meta["draft_materials"] == [
+        {"type": 0, "value": []},
+        {"type": 1, "value": []},
+        {"type": 2, "value": []},
+        {"type": 3, "value": []},
+        {"type": 6, "value": []},
+        {"type": 7, "value": []},
+        {"type": 8, "value": []},
+    ]
+
+
+def test_capcut_meta_draft_id_matches_content_id():
+    data = export_capcut(two_segment_result())
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        content = json.loads(zf.read("video/draft_content.json"))
+        meta = json.loads(zf.read("video/draft_meta_info.json"))
+    assert meta["draft_id"] == content["id"]
+
+
+def test_capcut_custom_params():
+    data = export_capcut(
+        two_segment_result(),
+        media_name="clip.mp4",
+        width=1280,
+        height=720,
+        fps=25,
+        font_size=20.0,
+        font_color="#FF8800",
+        draft_name="my_draft",
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert set(zf.namelist()) == {
+            "my_draft/draft_content.json",
+            "my_draft/draft_info.json",
+            "my_draft/draft_meta_info.json",
+        }
+        content = json.loads(zf.read("my_draft/draft_content.json"))
+    assert content["canvas_config"] == {"width": 1280, "height": 720, "ratio": "original"}
+    assert content["fps"] == 25.0
+    mat = content["materials"]["texts"][0]
+    assert mat["font_size"] == 20.0
+    assert mat["text_color"] == "#FFFFFFFF"
+    parsed = json.loads(mat["content"])
+    assert parsed["styles"][0]["size"] == 20.0
+    assert parsed["styles"][0]["fill"]["content"]["solid"]["color"] == pytest.approx(
+        [1.0, 136 / 255, 0.0]
+    )
+
+
+def test_capcut_uses_media_duration_for_total():
+    result = make_result(two_segment_result().segments, media_duration=12.5)
+    data = export_capcut(result)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        content = json.loads(zf.read("video/draft_content.json"))
+        meta = json.loads(zf.read("video/draft_meta_info.json"))
+    assert content["duration"] == 12_500_000
+    assert meta["tm_duration"] == 12_500_000
+
+
+def test_capcut_newlines_collapsed_to_space():
+    result = single_segment(0.0, 1.0, "line1\nline2")
+    content = _capcut_content(export_capcut(result))
+    mat = content["materials"]["texts"][0]
+    assert json.loads(mat["content"])["text"] == "line1 line2"
+
+
+def test_capcut_empty_result():
+    content = _capcut_content(export_capcut(make_result()))
+    assert content["duration"] == 0
+    assert content["tracks"][0]["segments"] == []
+    assert content["materials"]["texts"] == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"width": 0}, {"height": -1}, {"fps": 0}, {"font_size": -5}],
+)
+def test_capcut_rejects_non_positive_params(kwargs):
+    with pytest.raises(ExportError):
+        export_capcut(two_segment_result(), **kwargs)
+
+
+@pytest.mark.parametrize("bad", ["", "FFFFFF", "#FFF", "#GGGGGG", "#12345", None, 42])
+def test_capcut_rejects_malformed_color(bad):
+    with pytest.raises(ExportError):
+        export_capcut(two_segment_result(), font_color=bad)
+
+
+def test_capcut_draft_name_sanitized():
+    data = export_capcut(two_segment_result(), draft_name="../evil/name")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert set(zf.namelist()) == {
+            "__evil_name/draft_content.json",
+            "__evil_name/draft_info.json",
+            "__evil_name/draft_meta_info.json",
+        }
 
 
 # ---------------------------------------------------------------------------

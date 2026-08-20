@@ -26,20 +26,35 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_not_expired, get_job_or_404, require_done, session_token
+from app.api.deps import (
+    current_user,
+    ensure_not_expired,
+    get_job_or_404,
+    require_done,
+    require_job_access,
+    session_token,
+)
 from app.config import Settings, get_settings
 from app.core import MediaProcessingError, probe_media
 from app.core.exceptions import RenderError
 from app.core.models import TranscriptionResult
 from app.database import SessionLocal, get_db
-from app.exporters import AssStyle, export_ass, export_fcpxml, export_srt, export_text, export_vtt
-from app.models.db import Job
+from app.exporters import (
+    AssStyle,
+    export_ass,
+    export_capcut,
+    export_fcpxml,
+    export_srt,
+    export_text,
+    export_vtt,
+)
+from app.models.db import Job, User
 from app.storage import get_storage, render_key, source_key
 from app.worker.serialization import json_to_segments
 
 router = APIRouter()
 
-TEXT_FORMATS = {"srt", "vtt", "txt", "ass", "fcpxml"}
+TEXT_FORMATS = {"srt", "vtt", "txt", "ass", "fcpxml", "capcut"}
 RENDER_FORMATS = {
     "mp4": ("burned.mp4", "video/mp4"),
     "webm_alpha": ("alpha.webm", "video/webm"),
@@ -121,6 +136,14 @@ def _text_response(content: str, filename: str) -> Response:
     )
 
 
+def _zip_response(content: bytes, filename: str) -> Response:
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _export_text(job: Job, fmt: str, settings: Settings, **params) -> Response:
     result = _build_result(job)
     stem = _stem(job)
@@ -143,6 +166,10 @@ def _export_text(job: Job, fmt: str, settings: Settings, **params) -> Response:
         )
         return _text_response(
             export_ass(result, style=style, karaoke=params["karaoke"]), f"{stem}.ass"
+        )
+    if fmt == "capcut":
+        return _zip_response(
+            export_capcut(result, media_name=stem), f"{stem}_capcut_draft.zip"
         )
     return _text_response(export_fcpxml(result, media_name=stem), f"{stem}.fcpxml")
 
@@ -325,18 +352,43 @@ def start_render(job: Job, fmt: str, settings: Settings, params: dict) -> str:
     if state and state["status"] == "rendering":
         return "rendering"
     _set_render_state(job.id, fmt, "rendering")
-    thread = threading.Thread(
-        target=_render_worker,
-        args=(job.id, fmt, settings, params),
-        name=f"sfc-render-{job.id}-{fmt}",
-        daemon=True,
-    )
-    thread.start()
+    # Clear any stale cross-process failure marker from a previous attempt
+    err_key = render_key(job.id, f"{RENDER_FORMATS[fmt][0]}.error")
+    get_storage().save(b"", err_key)
+    from app.worker.render_tasks import render_task  # lazy import
+
+    try:
+        render_task.delay(job.id, fmt, params)
+    except Exception:
+        # broker unreachable — fall back to the in-process thread so renders
+        # keep working without Redis (mirrors the inline-queue fallback)
+        thread = threading.Thread(
+            target=_render_worker,
+            args=(job.id, fmt, settings, params),
+            name=f"sfc-render-{job.id}-{fmt}",
+            daemon=True,
+        )
+        thread.start()
     return "rendering"
 
 
 def render_status(job_id: str, fmt: str, settings: Settings) -> tuple[str, str | None]:
     """Current render state: ready (cached file), rendering, failed, or idle."""
+    # The render task runs in a Celery worker process, so terminal states
+    # derived from storage take precedence over the local in-memory hint.
+    if get_storage().exists(render_key(job_id, RENDER_FORMATS[fmt][0])):
+        _set_render_state(job_id, fmt, "ready")
+        return "ready", None
+    err_key = render_key(job_id, f"{RENDER_FORMATS[fmt][0]}.error")
+    if get_storage().exists(err_key):
+        try:
+            with open(get_storage().open_path(err_key), encoding="utf-8") as fh:
+                error = fh.read()
+        except OSError:
+            error = ""
+        if error:
+            _set_render_state(job_id, fmt, "failed")
+            return "failed", error
     state = _get_render_state(job_id, fmt)
     if state and state["status"] == "rendering":
         # A worker can die without writing a terminal state (e.g. API restart);
@@ -345,8 +397,6 @@ def render_status(job_id: str, fmt: str, settings: Settings) -> tuple[str, str |
             _set_render_state(job_id, fmt, "idle")
         else:
             return "rendering", None
-    if get_storage().exists(render_key(job_id, RENDER_FORMATS[fmt][0])):
-        return "ready", None
     if state and state["status"] == "failed":
         return "failed", state.get("error")
     return "idle", None
@@ -380,6 +430,7 @@ def start_export_render(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     font_size: int = Query(64, ge=1),
@@ -396,6 +447,7 @@ def start_export_render(
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
+    require_job_access(db, job, user, token)
     status = start_render(
         job,
         fmt,
@@ -410,6 +462,7 @@ def export_render_status(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -417,6 +470,7 @@ def export_render_status(
     _validate_render_format(fmt)
     job = get_job_or_404(db, job_id)
     require_done(job)
+    require_job_access(db, job, user, token)
     status, error = render_status(job_id, fmt, settings)
     return {"status": status, "error": error}
 
@@ -426,6 +480,7 @@ def export_job(
     job_id: str,
     fmt: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     font_size: int = Query(64, ge=1),
@@ -447,6 +502,7 @@ def export_job(
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
     require_done(job)
+    require_job_access(db, job, user, token)
 
     params = {
         "font_size": font_size,

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 import time
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
 from datetime import timedelta
 
 import pytest
@@ -185,6 +187,21 @@ def test_happy_path_wav(client, tmp_path):
     assert resp.status_code == 200
     root = ET.fromstring(resp.text)
     assert root.tag == "fcpxml"
+
+    resp = client.get(f"/api/jobs/{job_id}/export/capcut", headers={"X-Session-Token": TOKEN})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "capcut_draft.zip" in resp.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        assert set(zf.namelist()) == {
+            "sample/draft_content.json",
+            "sample/draft_info.json",
+            "sample/draft_meta_info.json",
+        }
+        content = json.loads(zf.read("sample/draft_content.json"))
+        assert content["tracks"][0]["type"] == "text"
+        assert content["tracks"][0]["segments"][0]["target_timerange"]["start"] == 100_000
 
 
 def test_export_mp4_and_webm_alpha(client, tmp_path):

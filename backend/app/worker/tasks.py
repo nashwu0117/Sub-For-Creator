@@ -84,7 +84,12 @@ def _process_job(job_id: str) -> None:
 
     # 2. transcribing
     _update_job(job_id, stage=JobStage.TRANSCRIBING.value, progress=40.0)
-    backend = get_backend()
+    backend = get_backend(
+        tier=settings.tier,
+        beam_size=settings.beam_size,
+        temperature=settings.temperature,
+        vad_enabled=settings.vad_enabled,
+    )
     raw = backend.transcribe(storage.open_path(audio_key(job_id)), job.language or None)
     _update_job(job_id, progress=70.0)
 

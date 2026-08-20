@@ -1,0 +1,14 @@
+# Grafana dashboard provisioning — loads sfc-overview.json from the mounted dir.
+apiVersion: 1
+
+providers:
+  - name: "Sub for Creator"
+    orgId: 1
+    folder: "Sub for Creator"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

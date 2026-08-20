@@ -10,14 +10,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import auth as auth_router
 from app.api import config as config_router
 from app.api import export as export_router
 from app.api import fonts as fonts_router
 from app.api import health as health_router
 from app.api import jobs as jobs_router
 from app.api import media as media_router
+from app.api import metrics as metrics_router
 from app.api import subtitles as subtitles_router
 from app.api import uploads as uploads_router
+from app.api import works as works_router
 from app.config import get_settings
 from app.core.exceptions import (
     ASRError,
@@ -135,6 +138,9 @@ def create_app() -> FastAPI:
         media_router.router,
         export_router.router,
         fonts_router.router,
+        metrics_router.router,
+        auth_router.router,
+        works_router.router,
     ):
         app.include_router(router, prefix="/api")
 

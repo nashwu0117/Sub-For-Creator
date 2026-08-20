@@ -24,10 +24,14 @@ The project is free to use, self-hostable, and released under AGPL-3.0. The publ
 
 - **AI transcription and smart segmentation**: WhisperX provides word-level alignment, then punctuation, pauses, and line-length rules produce readable subtitle lines.
 - **Web subtitle editor**: Video player, subtitle list, and a wavesurfer timeline stay synchronized so you can edit text and timing while previewing the result.
-- **Multi-format export**: SRT, VTT, TXT, ASS, FCPXML, burned-in MP4, and transparent WebM (VP9 alpha).
+- **Multi-format export**: SRT, VTT, TXT, ASS, FCPXML, CapCut draft Zip, burned-in MP4, and transparent WebM (VP9 alpha).
 - **Word-highlight karaoke**: ASS export supports per-word color changes for lyrics and karaoke-style videos.
 - **Anonymous, no-account workflow**: The browser generates a session token for job ownership and rate limiting; no personal profile is required.
+- **Optional account system & work collection**: Register to save jobs into your personal "My Works" library; claimed jobs become owner-only. Everything still works without an account.
 - **Queue visibility**: Redis-backed jobs show queue position, progress, and an estimated wait time.
+- **Multi-GPU scaling**: Dedicated transcribe/render queues let multiple workers each bind their own GPU (or run CPU-only by default).
+- **Prometheus monitoring**: `/api/metrics` exposes HTTP, queue, GPU, and storage metrics, with an optional docker-compose monitoring stack (Prometheus + Grafana).
+- **ASR accuracy tiers**: VAD voice detection and beam size / temperature / tier (lite / standard / pro) tuning; audio trimming is more precise.
 - **Automatic cleanup**: Processed files are retained for 48 hours by default and then permanently deleted.
 
 ## Architecture
@@ -212,12 +216,18 @@ Completed in v1:
 - Anonymous sessions, queue status, and usage limits
 - Automatic cleanup after 48 hours
 
+Completed in v2:
+
+- Optional accounts and work collection (claimed jobs become owner-only)
+- CapCut draft export (importable Zip for JianYing desktop/mobile)
+- Multi-GPU horizontal scaling (dedicated transcribe/render queues)
+- Prometheus monitoring stack (`/api/metrics` + Grafana overlay)
+- ASR accuracy tiers: VAD + beam size / temperature presets
+
 Planned next:
 
-- Accounts and saved projects
+- ASR phase 2: denoising, user dictionary (initial_prompt), LLM correction
 - Saved subtitle styles and reusable presets
-- CapCut draft export
-- Horizontal scaling across multiple GPUs
 
 ## Contributing
 

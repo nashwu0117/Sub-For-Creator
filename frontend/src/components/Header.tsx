@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink } from "react-router-dom";
 import { applyLocale, LOCALES, type Locale } from "../i18n";
+import { useAuth } from "../context/AuthContext";
 
 function LogoMark() {
   return (
@@ -15,10 +16,15 @@ function LogoMark() {
 export default function Header() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language as Locale;
+  const { user, loading, openAuth, logout } = useAuth();
 
   useEffect(() => {
     document.title = `Sub for Creator — ${t("common.pageTitle")}`;
   }, [t]);
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+  }, [logout]);
 
   return (
     <header className="site-header">
@@ -41,6 +47,28 @@ export default function Header() {
           </NavLink>
         </nav>
         <span className="header-spacer" />
+        <div className="auth-controls">
+          {loading ? null : user ? (
+            <>
+              <span className="auth-user" title={user.email}>
+                {user.display_name}
+              </span>
+              <NavLink
+                to="/works"
+                className={({ isActive }) => `auth-works-link${isActive ? " active" : ""}`}
+              >
+                {t("works.navAria")}
+              </NavLink>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => void handleLogout()}>
+                {t("auth.logout")}
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => openAuth("login")}>
+              {t("auth.login")}
+            </button>
+          )}
+        </div>
         <label className="lang-switcher">
           <span className="lang-switcher-label" aria-hidden="true">
             {t("header.language")}

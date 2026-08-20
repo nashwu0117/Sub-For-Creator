@@ -44,9 +44,13 @@ def test_get_backend_unknown():
 
 
 def test_backends_constructible():
-    assert WhisperXBackend().model_size == "large-v3"
-    assert FasterWhisperBackend().model_size == "large-v3"
+    # default tier is "standard" -> medium model, beam 5, temperature 0, VAD on
+    assert WhisperXBackend().model_size == "medium"
+    assert FasterWhisperBackend().model_size == "medium"
     assert MockBackend().model_size == "mock"
+    assert WhisperXBackend().beam_size == 5
+    assert WhisperXBackend().temperature == 0.0
+    assert WhisperXBackend().vad_enabled is True
 
 
 def test_whisperx_model_size_from_env(monkeypatch):

@@ -1,4 +1,4 @@
-# Sub for Creator — API 契約 (v1)
+# Sub for Creator — API 契約 (v2)
 
 前後端共同遵循的 API 規範。後端依此實作，前端依此串接。
 
@@ -7,6 +7,7 @@
 - Base path: `/api`
 - 所有回應皆為 JSON（匯出檔案除外）。
 - 匿名 session：客戶端在首次造訪時產生 UUID v4，之後每個請求帶 `X-Session-Token: <uuid>` header（前端存 localStorage）。伺服器不驗證 token 格式（opaque），僅作為限流與作業歸屬的鍵。
+- 帳號系統（可選）：登入後伺服器設定 HttpOnly cookie（預設 `sfc_session`，`SameSite=Lax`，可由 `SFC_AUTH_*` 調整）。**作業歸屬規則**：未收藏（claim）的作業以 session token 存取；一旦被某帳號收藏，該作業只能由該帳號（cookie）存取，原始 session token 失效（403）。
 - 時間格式：秒，浮點數（`start` / `end`）。
 - 錯誤格式：`{ "detail": "human readable message" }`（HTTP 狀態碼對應語意）。
 - 環境變數以 `SFC_` 為前綴，`.env.example` 列出全部。
@@ -18,6 +19,19 @@
 ```
 200 { "status": "ok", "version": "0.1.0" }
 ```
+
+### `GET /api/metrics` — Prometheus 指標（監控）
+
+`SFC_METRICS_ENABLED=true` 時啟用（預設 `false`）。回傳 Prometheus text format：
+
+- `sfc_http_requests_total{method,path,status}` — HTTP 請求計數
+- `sfc_http_request_duration_seconds{method,path}` — 直方圖
+- `sfc_active_jobs` — 目前佇列/處理中的作業數
+- `sfc_gpu_utilization_percent{gpu}` / `sfc_gpu_memory_used_bytes{gpu}` — NVIDIA GPU（有 GPU 時）
+- `sfc_storage_used_bytes` / `sfc_upload_dir_bytes` — 儲存用量
+- `sfc_font_dir_bytes` — 字型目錄用量
+
+未啟用時回 `404`。
 
 ### `GET /api/config`
 
@@ -62,6 +76,30 @@ multipart/form-data：
 
 - 所有請求都需帶與開 session 相同的 `X-Session-Token`，否則 `403`。
 - 分片內容先暫存於 `{UPLOAD_DIR}/.chunks/{upload_id}/`，`complete` 時合併、probe 後入佇列；逾時未完成由清理任務刪除。
+
+### 帳號系統（可選，v2）
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| POST | `/api/auth/register` | 註冊：body `{ "email", "password", "display_name"? }` → `201 { "id", "email", "display_name", "created_at" }`；`409` email 重複、`422` 格式錯誤 |
+| POST | `/api/auth/login` | 登入：body `{ "email", "password" }` → `200 { "id", "email", "display_name", "created_at" }` ＋ 設定 session cookie；`401` 憑證錯誤 |
+| POST | `/api/auth/logout` | 登出（清除 cookie，冪等）→ `200 { "ok": true }` |
+| GET | `/api/auth/me` | 目前使用者 → `200 {...}`；未登入 `401` |
+
+- 密碼以 PBKDF2-HMAC-SHA256（600k iterations）＋每使用者隨機 salt 儲存；cookie 為 HMAC-SHA256 簽章的 `{user_id}.{expiry}.{digest}`（HttpOnly、`SameSite=Lax`），不存 localStorage（XSS 可讀性考量）。
+- 行為為 v1 的「覆蓋層」：不登入仍可完全使用所有功能；登入只是多了作品收藏與作業所有權。
+
+### 作品收藏（v2）
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| GET | `/api/works` | 列出目前使用者的作品（最新在前）：`200 [ { "id", "job_id", "title", "created_at", "job": { "status", "filename", "duration", "expires_at" } } ]`；未登入 `401` |
+| POST | `/api/works/{job_id}` | 收藏（claim）一個 session token 擁有的作業到目前帳號；冪等（重複 claim 回傳既有作品）；`403` 作業屬其他 session/帳號 |
+| GET | `/api/works/{work_id}` | 單一作品（含即時 job 狀態）；非本人 `403` |
+| DELETE | `/api/works/{work_id}` | 從收藏移除（作業本身不動）→ `200 { "ok": true }` |
+
+- 作業 TTL（48h）到期被清除後，作品列的 `job.status` 回報 `"expired"`，作品本身保留。
+- **所有權生效**：一經 claim，該 job 的所有端點（狀態/字幕/媒體/匯出）只接受帳號 cookie；以原始 `X-Session-Token` 存取回 `403`。
 
 ### `GET /api/jobs/{job_id}` — 作業狀態
 
@@ -112,9 +150,10 @@ Body：`{ "segments": [ { "id", "start", "end", "text" } ] }`（可省略 words�
 
 ### `GET /api/jobs/{job_id}/export/{format}` — 匯出
 
-`format` ∈ `srt | vtt | txt | ass | fcpxml | mp4 | webm_alpha`
+`format` ∈ `srt | vtt | txt | ass | fcpxml | capcut | mp4 | webm_alpha`
 
 - 文字類（srt/vtt/txt/ass/fcpxml）：即時產生，`Content-Type: text/plain; charset=utf-8`，`Content-Disposition: attachment; filename="..."`
+- `capcut`：剪映草稿（CapCut draft）Zip — 產生 `{stem}_capcut_draft.zip`（draft_content.json + 對應素材），可直接匯入剪映桌面版/手機版
 - `mp4`：燒錄字幕的 H.264 MP4（`video/mp4`）；`webm_alpha`：透明背景 VP9 webm（`video/webm`）
 - 作業須為 `done`，否則 `409`。
 - query params：`font_size=64`、`font_color=#FFFFFF`、`outline_color=#000000`、`font_family=`、`karaoke=0|1`、`position=bottom|top`（ass/mp4/webm_alpha 適用）；`include_punctuation=true|false`（txt 適用）
@@ -167,12 +206,13 @@ multipart/form-data：`file`（.ttf / .otf，必填）。上限 `SFC_MAX_FONT_MB
 | 狀態碼 | 情境 |
 |---|---|
 | 400 | 缺少/過長 `X-Session-Token`、格式不支援、媒體無法解析、時長超過上限 |
-| 403 | 分片上傳 session 的 owner token 不符 |
-| 404 | 作業不存在、media/audio 檔案不存在、字型檔不存在 |
-| 409 | 作業尚未完成（`require_done`）、render 尚未準備好 |
+| 401 | 需要登入（未帶 cookie 存取 auth/works 端點） |
+| 403 | 分片上傳 session 的 owner token 不符；作業已被他人收藏（claim）後以原始 session token 存取；存取他人作品 |
+| 404 | 作業不存在、media/audio 檔案不存在、字型檔不存在、metrics 未啟用 |
+| 409 | 作業尚未完成（`require_done`）、render 尚未準備好、email 已註冊 |
 | 410 | 作業 TTL 已到期 |
 | 413 | 檔案超過 `SFC_MAX_UPLOAD_MB` / 字型超過 `SFC_MAX_FONT_MB`（僅限值 > 0 時） |
-| 422 | 不支援的語言、options JSON 無效、空檔案、無效匯出格式/參數、字幕片段驗證失敗 |
+| 422 | 不支援的語言、options JSON 無效、空檔案、無效匯出格式/參數、字幕片段驗證失敗、email/password 格式錯誤 |
 | 429 | 額度/限流/佇列滿（附 `retry_after_seconds`） |
 | 500 | 匯出或 ASR 內部錯誤 |
 
@@ -188,6 +228,12 @@ multipart/form-data：`file`（.ttf / .otf，必填）。上限 `SFC_MAX_FONT_MB
 | 檔案 TTL | 48 h | `SFC_TTL_HOURS` |
 | 上傳頻率 | 0 次/60s | `SFC_UPLOAD_RATE_LIMIT` |
 | render 逾時 | 3600 s | `SFC_RENDER_TIMEOUT_SECONDS` |
+| ASR 精準度 tier | `standard` | `SFC_TIER`（`lite` / `standard` / `pro`）；`SFC_BEAM_SIZE`、`SFC_TEMPERATURE`、`SFC_VAD_ENABLED` 可覆寫（留空 = 沿用 tier 預設） |
+| 帳號 cookie 名稱 | `sfc_session` | `SFC_AUTH_COOKIE_NAME` |
+| 帳號 cookie Secure | `false` | `SFC_AUTH_COOKIE_SECURE`（HTTPS 部署設 `true`） |
+| 帳號簽章密鑰 | dev 預設值 | `SFC_AUTH_SECRET`（部署務必改） |
+| 帳號 session 天數 | 30 | `SFC_AUTH_SESSION_DAYS` |
+| 監控指標 | `false` | `SFC_METRICS_ENABLED` |
 
 429 response：`{ "detail": "...", "retry_after_seconds": 60 }`
 
@@ -205,6 +251,10 @@ done → (TTL 到期) → 410
 
 `usage` 表（限流用）：`session_token`、`date`、`uploaded_seconds`（upsert）。
 
+`users` 表（帳號，v2）：`id (int, pk)`、`email`（小寫唯一）、`password_hash`（`pbkdf2_sha256$iter$salt$hash`）、`display_name`、`created_at`。
+
+`works` 表（作品收藏，v2）：`id (int, pk)`、`user_id`（FK users）、`job_id`（**刻意不加 FK** — job 有 TTL 會被刪除，work 要存活並回報 `expired`）、`title`、`created_at`。一 job 至多被一人收藏。
+
 ## 儲存佈局
 
 - 上傳原始檔：`{UPLOAD_DIR or S3}/jobs/{job_id}/source.<ext>`
@@ -220,7 +270,8 @@ done → (TTL 到期) → 410
 | 路由 | 頁面 |
 |---|---|
 | `/` | 上傳頁（含佇列狀態、最近作業清單 localStorage） |
-| `/edit/:jobId` | 編輯器（播放器 + 字幕列表 + wavesurfer 時間軸） |
+| `/edit/:jobId` | 編輯器（播放器 + 字幕列表 + wavesurfer 時間軸 + 收藏按鈕） |
+| `/works` | 我的作品（收藏列表，v2） |
 | `/privacy` | 隱私權政策 |
 | `/terms` | 服務條款 |
 

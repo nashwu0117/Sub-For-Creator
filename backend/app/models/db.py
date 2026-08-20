@@ -1,11 +1,11 @@
-"""ORM models: Job (transcription jobs) and Usage (daily quota accounting)."""
+"""ORM models: Job, Usage, and the optional account system (User, Work)."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint, select
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.models import JobStatus
@@ -55,3 +55,41 @@ class Usage(Base):
         else:
             row.uploaded_seconds += add_seconds
         return row
+
+
+class User(Base):
+    """Optional account: email + PBKDF2 password hash + display name.
+
+    Accounts are a pure overlay on the anonymous session flow — a job is still
+    owned by its ``session_token``; the account only adds a persistent identity
+    that can claim jobs into a personal library (see ``Work``).
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: stored lowercased so the unique index enforces case-insensitive uniqueness
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Work(Base):
+    """A saved job in a user's personal library (the "works" collection).
+
+    ``job_id`` is deliberately NOT a foreign key: jobs are ephemeral (deleted
+    by the TTL cleanup once ``expires_at`` passes) while works are meant to
+    persist, so a hard FK would either block cleanup (RESTRICT) or cascade the
+    work away (CASCADE). The works list reports ``job.status`` as ``expired``
+    when the underlying job row is gone.
+    """
+
+    __tablename__ = "works"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_work_user_job"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    job_id: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

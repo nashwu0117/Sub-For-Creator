@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
+import { createWork, getJob, getMediaUrl, getAudioUrl, getSubtitles, putSubtitles } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import { usePolling } from "../hooks/usePolling";
 import { useAuthedMedia } from "../hooks/useAuthedMedia";
 import type { EditorStyle, Job, Segment } from "../types";
@@ -28,6 +29,7 @@ type ToastKind = "ok" | "error";
 export default function Editor() {
   const { t } = useTranslation();
   const { jobId } = useParams<{ jobId: string }>();
+  const { user, openAuth } = useAuth();
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -39,6 +41,8 @@ export default function Editor() {
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
   /** transient polling errors (e.g. network hiccup); do not break the editor */
   const [pollNote, setPollNote] = useState<string | null>(null);
+  const [workSaved, setWorkSaved] = useState(false);
+  const [savingWork, setSavingWork] = useState(false);
   const playerRef = useRef<PlayerHandle>(null);
   const waveformRef = useRef<WaveformHandle>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -155,6 +159,24 @@ export default function Editor() {
     }
   }, [jobId, segments, saving, showToast, t]);
 
+  const handleSaveWork = useCallback(async () => {
+    if (!jobId || savingWork) return;
+    if (!user) {
+      openAuth("login");
+      return;
+    }
+    setSavingWork(true);
+    try {
+      await createWork(jobId);
+      setWorkSaved(true);
+      showToast(t("works.savedToast"));
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : t("works.saveFailed", { msg: "" }), "error");
+    } finally {
+      setSavingWork(false);
+    }
+  }, [jobId, user, savingWork, openAuth, showToast, t]);
+
   const activeSegmentId = useMemo(() => {
     const s = segments.find(
       (seg) => currentTime >= seg.start - 0.05 && currentTime <= seg.end + 0.05,
@@ -228,6 +250,17 @@ export default function Editor() {
           {t("editor.done")}
         </span>
         {dirty && <span className="dirty-badge">{t("common.unsaved")}</span>}
+        <span className="header-spacer" />
+        <button
+          className={`btn btn-sm${workSaved ? " btn-saved" : " btn-primary"}`}
+          type="button"
+          onClick={() => void handleSaveWork()}
+          disabled={workSaved || savingWork}
+          aria-label={workSaved ? t("works.saved") : t("works.save")}
+        >
+          {savingWork && <span className="spinner" aria-hidden="true" />}
+          {workSaved ? t("works.saved") : t("works.save")}
+        </button>
       </div>
 
       <div className="editor-grid">

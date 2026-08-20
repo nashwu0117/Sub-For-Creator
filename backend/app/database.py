@@ -58,6 +58,6 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Create all tables (idempotent)."""
-    from app.models.db import Job, Usage  # noqa: F401  (register models on Base)
+    from app.models.db import Job, Usage, User, Work  # noqa: F401  (register models on Base)
 
     Base.metadata.create_all(bind=engine)

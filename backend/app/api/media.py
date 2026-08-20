@@ -9,8 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_not_expired, get_job_or_404, session_token
+from app.api.deps import (
+    current_user,
+    ensure_not_expired,
+    get_job_or_404,
+    require_job_access,
+    session_token,
+)
 from app.database import get_db
+from app.models.db import User
 from app.storage import audio_key, get_storage, source_key
 
 router = APIRouter()
@@ -20,10 +27,12 @@ router = APIRouter()
 def get_media(
     job_id: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
+    require_job_access(db, job, user, token)
     storage = get_storage()
     ext = os.path.splitext(job.filename)[1].lower() or ".bin"
     key = source_key(job.id, ext)
@@ -42,10 +51,12 @@ def get_media(
 def get_audio(
     job_id: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
+    require_job_access(db, job, user, token)
     storage = get_storage()
     key = audio_key(job.id)
     if not storage.exists(key):

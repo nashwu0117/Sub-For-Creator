@@ -13,7 +13,13 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import ensure_not_expired, get_job_or_404, session_token
+from app.api.deps import (
+    current_user,
+    ensure_not_expired,
+    get_job_or_404,
+    require_job_access,
+    session_token,
+)
 from app.api.limits import (
     check_daily_quota,
     check_queue_capacity,
@@ -23,7 +29,7 @@ from app.api.limits import (
 from app.config import SUPPORTED_LANGUAGES, Settings, get_settings
 from app.core.models import JobStatus
 from app.database import get_db
-from app.models.db import ACTIVE_STATUSES, Job
+from app.models.db import ACTIVE_STATUSES, Job, User
 from app.schemas import JobOptions
 from app.storage import get_storage, source_key
 from app.worker.queue import get_queue
@@ -188,10 +194,12 @@ def create_job(
 def get_job(
     job_id: str,
     token: str = Depends(session_token),
+    user: User | None = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     job = get_job_or_404(db, job_id)
     ensure_not_expired(db, job)
+    require_job_access(db, job, user, token)
     position = _queue_position(db, job) if job.status in ACTIVE_STATUSES else None
     return {
         "job_id": job.id,

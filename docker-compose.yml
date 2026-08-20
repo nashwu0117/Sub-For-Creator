@@ -27,6 +27,11 @@
 #      docker compose build --build-arg INSTALL_GPU=1 api
 #      （api 与 worker 共用同一镜像；api 不受影响，仅镜像变大）
 #   3) 取消下方 worker 的 deploy.resources 注释块
+#
+# ---------- 多 GPU 横向扩展（可选）----------
+# 单机多 GPU / 多节点 worker 舰队：取消下方 worker-gpu / render-worker
+# 服务块注释，按 docs/DEPLOY-MULTI-GPU.md 的 runbook 操作（SFC_GPU_INDEX
+# 绑定 GPU、-Q 队列拆分、S3 共享存储等）。
 # =============================================================================
 
 # api / worker 共享的容器内环境（覆盖 .env 中的本地路径，指向容器内服务）
@@ -75,7 +80,10 @@ services:
     build: ./backend
     image: sfc-backend:latest
     restart: unless-stopped
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    # 消费全部队列（transcribe=ASR / render=烧录 / celery=默认轻量任务），
+    # 保持单 worker 部署行为不变；多 GPU 拆分时用 -Q 只消费部分队列
+    # （见 docs/DEPLOY-MULTI-GPU.md）
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "-Q", "transcribe,render,celery"]
     env_file:
       - .env
     environment:
@@ -99,6 +107,61 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+
+  # ---- GPU worker（多 GPU 横向扩展；默认注释，见文件头部说明）----
+  # 在 GPU 宿主机上启用：
+  #   1) 宿主机安装 NVIDIA Container Toolkit
+  #   2) docker compose build --build-arg INSTALL_GPU=1 api（重建共享镜像）
+  #   3) 取消下方 worker-gpu 服务块注释
+  #   4) 启动 N 个副本（每个副本通过 SFC_GPU_INDEX 绑定 GPU，0-based）：
+  #        docker compose up -d --scale worker-gpu=2
+  #     注意：--scale 的所有副本共享同一份 environment（SFC_GPU_INDEX=0），
+  #     即 2 个 worker 共用 GPU 0（int8 large-v3 约 8GB，可共驻）；
+  #     要分散到多张 GPU，请为每张 GPU 建一个 override 文件设置不同
+  #     SFC_GPU_INDEX（示例见 docs/DEPLOY-MULTI-GPU.md）。
+  # worker-gpu:
+  #   image: sfc-backend:latest
+  #   restart: unless-stopped
+  #   command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "-Q", "transcribe"]
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     <<: *app-env
+  #     SFC_ASR_BACKEND: whisperx
+  #     SFC_WHISPERX_MODEL: large-v3
+  #     SFC_GPU_INDEX: 0
+  #   volumes:
+  #     - sfc-data:/data
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+  # ---- Render worker（ffmpeg 烧录渲染；默认注释）----
+  # 把 MP4/WebM 烧录渲染从 API 进程移到独立 worker（render 队列），
+  # 需要先应用 api/export.py 的 wiring diff（见 docs/DEPLOY-MULTI-GPU.md）。
+  # 渲染是 CPU 密集（libx264/libvpx），不需要 GPU，可与 transcribe worker
+  # 分开扩缩容：
+  #   docker compose up -d --scale render-worker=2
+  # render-worker:
+  #   image: sfc-backend:latest
+  #   restart: unless-stopped
+  #   command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "-Q", "render"]
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     <<: *app-env
+  #   volumes:
+  #     - sfc-data:/data
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
 
   # ---- Celery beat（TTL 清理排程；celery 队列模式下过期文件清理依赖本服务）----
   beat:

@@ -1,0 +1,31 @@
+# =============================================================================
+# Sub-For-Creator — Prometheus scrape configuration
+#
+# Scrapes the FastAPI /api/metrics endpoint (mounted under /api, so the full
+# path is http://api:8000/api/metrics). The endpoint is unauthenticated by
+# design; see docs/MONITORING.md for how to firewall it when the API is public.
+#
+# Host-level metrics (node-exporter / cadvisor) are commented out below —
+# uncomment and add the services to docker-compose.monitoring.yml to enable.
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: sfc
+
+scrape_configs:
+  # ---- Sub-For-Creator API (queue depth, job counts, storage, GPU, ASR) ----
+  - job_name: "sfc-api"
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  # ---- Optional host metrics (uncomment to enable) ----
+  # - job_name: "node"
+  #   static_configs:
+  #     - targets: ["node-exporter:9100"]
+  # - job_name: "cadvisor"
+  #   static_configs:
+  #     - targets: ["cadvisor:8080"]

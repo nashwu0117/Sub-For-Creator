@@ -71,14 +71,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", type=Path, help="input media file (video or audio)")
     p.add_argument(
         "--lang", "-l", default=None,
-        help="language code (ISO 639-1); default: auto-detect",
+        help="language code (ISO 639-1) to FORCE, e.g. zh/en/ja/ko; "
+        "'auto' or omit = auto-detect",
     )
     p.add_argument("--output", "-o", type=Path, default=None, help="output file path")
     p.add_argument(
         "--format", "-f", choices=FORMATS, default=None,
         help="output format; default: inferred from --output extension, else srt",
     )
-    p.add_argument("--model", default="large-v3", help="ASR model size (default: large-v3)")
+    p.add_argument(
+        "--tier", choices=("lite", "standard", "pro"), default=None,
+        help="accuracy tier: lite (small/int8), standard (medium), pro (large-v3); "
+        "default: SFC_TIER env or standard",
+    )
+    p.add_argument(
+        "--model", default=None,
+        help="ASR model size override (wins over --tier); default: tier preset",
+    )
+    p.add_argument(
+        "--beam-size", type=int, default=None,
+        help="decoding beam size (default: tier preset: 5 lite/standard, 10 pro)",
+    )
+    p.add_argument(
+        "--temperature", type=float, default=None,
+        help="decoding temperature; 0 = deterministic (default: 0)",
+    )
+    p.add_argument(
+        "--no-vad", action="store_true",
+        help="disable voice-activity detection (VAD); default: enabled",
+    )
     p.add_argument(
         "--max-line-chars", type=int, default=None,
         help="max characters per subtitle line (backend default if omitted)",
@@ -227,7 +248,14 @@ def run(args) -> int:
         extract_audio(str(args.input), str(wav_path))
 
         step(2, total, "Transcribing...", args.quiet)
-        backend = get_backend("mock" if args.mock else None)
+        backend = get_backend(
+            "mock" if args.mock else None,
+            tier=args.tier,
+            model_size=args.model,
+            beam_size=args.beam_size,
+            temperature=args.temperature,
+            vad_enabled=False if args.no_vad else None,
+        )
         if not args.quiet and tqdm is not None:
             with tqdm.tqdm(total=1, desc="  transcribe", leave=False) as bar:
                 raw = backend.transcribe(str(wav_path), language=args.lang)
@@ -244,7 +272,7 @@ def run(args) -> int:
             language=raw.language,
             language_probability=raw.language_probability,
             media_duration=duration,
-            model_size=args.model,
+            model_size=backend.model_size,
         )
 
         step(4, total, "Exporting...", args.quiet)
