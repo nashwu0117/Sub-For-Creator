@@ -24,6 +24,7 @@ The project is free to use, self-hostable, and released under AGPL-3.0. The publ
 
 - **AI transcription and smart segmentation**: WhisperX provides word-level alignment, then punctuation, pauses, and line-length rules produce readable subtitle lines.
 - **Web subtitle editor**: Video player, subtitle list, and a wavesurfer timeline stay synchronized so you can edit text and timing while previewing the result.
+- **Interactive subtitle drag and resize**: Drag subtitle boxes directly on the video preview to reposition them; 8 resize handles (corners + edge midpoints) adjust font size; keyboard arrow keys for fine-tuning (1% per press, 5% with Shift).
 - **Multi-format export**: SRT, VTT, TXT, ASS, FCPXML, CapCut draft Zip, burned-in MP4, and transparent WebM (VP9 alpha).
 - **Word-highlight karaoke**: ASS export supports per-word color changes for lyrics and karaoke-style videos.
 - **Anonymous, no-account workflow**: The browser generates a session token for job ownership and rate limiting; no personal profile is required.
@@ -227,6 +228,7 @@ Completed in v2:
 - Prometheus monitoring stack (`/api/metrics` + Grafana overlay)
 - ASR accuracy tiers: VAD + beam size / temperature presets
 - ASR phase 2: denoising, loudness normalization, user dictionary (initial_prompt), LLM correction
+- Interactive subtitle drag and resize on video preview (8 resize handles, keyboard arrow fine-tuning)
 
 Planned next:
 
