@@ -147,30 +147,3 @@ export interface RecentJob {
   status: JobStatus;
 }
 
-/** 帳號使用者（GET /api/auth/me、POST /api/auth/login 等） */
-export interface User {
-  id: number;
-  email: string;
-  display_name: string;
-  created_at: string | null;
-}
-
-/** 作品收藏中 job 的狀態（含已過 48h TTL 被清掉的 "expired"） */
-export type WorkJobStatus = JobStatus | "expired";
-
-/** 作品收藏（GET /api/works、POST /api/works/{job_id}） */
-export interface Work {
-  id: number;
-  job_id: string;
-  title: string;
-  created_at: string | null;
-  job: {
-    status: WorkJobStatus;
-    filename: string | null;
-    duration: number | null;
-    expires_at: string | null;
-  };
-}
-
-/** GET /api/works 回應（最新在前） */
-export type WorkListResponse = Work[];

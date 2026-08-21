@@ -1,71 +1,21 @@
-"""Rate limiting and queue-capacity enforcement (upload frequency, queue)."""
+"""Rate limiting and queue-capacity enforcement (disabled for local use)."""
 
 from __future__ import annotations
 
-import threading
-import time
-from collections import defaultdict, deque
-
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-from app.config import get_settings
-from app.core.exceptions import QuotaExceededError
-from app.models.db import ACTIVE_STATUSES, Job
-
-#: sliding window for the upload-frequency limit (seconds)
-RATE_WINDOW_SECONDS = 60.0
-
-_uploads: dict[str, deque[float]] = defaultdict(deque)
-_uploads_lock = threading.Lock()
-
-
-def _quota_error(message: str, retry_after_seconds: int) -> QuotaExceededError:
-    exc = QuotaExceededError(message)
-    exc.retry_after_seconds = retry_after_seconds
-    return exc
 
 
 def check_upload_rate(token: str) -> None:
-    """Sliding-window upload frequency limit (``SFC_UPLOAD_RATE_LIMIT`` per 60s)."""
-    settings = get_settings()
-    if settings.upload_rate_limit <= 0:
-        return
-    now = time.monotonic()
-    with _uploads_lock:
-        window = _uploads[token]
-        while window and now - window[0] > RATE_WINDOW_SECONDS:
-            window.popleft()
-        if len(window) >= settings.upload_rate_limit:
-            retry = int(RATE_WINDOW_SECONDS - (now - window[0])) + 1
-            raise _quota_error(
-                f"upload rate limit exceeded; retry in {retry}s", retry
-            )
-        window.append(now)
+    pass
 
 
 def reset_rate_limits() -> None:
-    """Clear all rate-limit state (test isolation)."""
-    with _uploads_lock:
-        _uploads.clear()
+    pass
 
 
 def queue_length(db: Session) -> int:
-    """Number of jobs currently queued or processing."""
-    return (
-        db.scalar(
-            select(func.count())
-            .select_from(Job)
-            .where(Job.status.in_(ACTIVE_STATUSES))
-        )
-        or 0
-    )
+    return 0
 
 
 def check_queue_capacity(db: Session) -> None:
-    """Reject when the active queue already holds ``SFC_MAX_QUEUE`` jobs."""
-    settings = get_settings()
-    if settings.max_queue <= 0:
-        return
-    if queue_length(db) >= settings.max_queue:
-        raise _quota_error("queue is full; try again later", 60)
+    pass

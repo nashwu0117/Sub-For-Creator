@@ -8,8 +8,6 @@ import type {
   Segment,
   StyleParams,
   SubtitlesResponse,
-  User,
-  Work,
 } from "../types";
 import i18n from "../i18n";
 
@@ -402,68 +400,6 @@ export async function fetchExportBlob(jobId: string, format: ExportFormat, style
   if (!res.ok) throw await parseError(res);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
-}
-
-/* ============================================================
-   帳號系統（auth 用 HttpOnly cookie，瀏覽器自動帶）
-   ============================================================ */
-
-/** POST /api/auth/register — 建立帳號（409 = email 已註冊，422 = 格式錯誤） */
-export function register(email: string, password: string, displayName?: string): Promise<User> {
-  return request<User>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password, ...(displayName ? { display_name: displayName } : {}) }),
-  });
-}
-
-/** POST /api/auth/login — 驗證憑證並設定 session cookie（401 = 憑證錯誤） */
-export function login(email: string, password: string): Promise<User> {
-  return request<User>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-/** POST /api/auth/logout — 清除 session cookie（未登入也安全） */
-export function logout(): Promise<{ ok: boolean }> {
-  return request<{ ok: boolean }>("/auth/logout", { method: "POST" });
-}
-
-/**
- * GET /api/auth/me — 回傳目前使用者；401（未登入）回傳 null，
- * 其餘錯誤照常拋出。初始載入時 401 是正常狀態，不是錯誤。
- */
-export async function getMe(): Promise<User | null> {
-  const res = await fetch(`${API_BASE}/auth/me`, {
-    headers: { "X-Session-Token": getSessionToken() },
-  });
-  if (res.status === 401) return null;
-  if (!res.ok) throw await parseError(res);
-  return (await res.json()) as User;
-}
-
-/* ============================================================
-   作品收藏
-   ============================================================ */
-
-/** POST /api/works/{job_id} — 把匿名 job 收藏進使用者作品庫（403 = 非本人 session） */
-export function createWork(jobId: string): Promise<Work> {
-  return request<Work>(`/works/${encodeURIComponent(jobId)}`, { method: "POST" });
-}
-
-/** GET /api/works — 列出目前使用者的作品，最新在前（401 = 未登入） */
-export function getWorks(): Promise<Work[]> {
-  return request<Work[]>("/works");
-}
-
-/** GET /api/works/{work_id} — 單一作品（含即時 job 狀態） */
-export function getWork(workId: number): Promise<Work> {
-  return request<Work>(`/works/${workId}`);
-}
-
-/** DELETE /api/works/{work_id} — 從作品庫移除（job 本身不受影響） */
-export function deleteWork(workId: number): Promise<{ ok: boolean }> {
-  return request<{ ok: boolean }>(`/works/${workId}`, { method: "DELETE" });
 }
 
 /* ============================================================

@@ -94,21 +94,21 @@ def test_config_endpoint(client):
     }
 
 
-def test_config_requires_token(client):
+def test_config_works_without_token(client):
+    """Config endpoint works without X-Session-Token (local mode)."""
     resp = client.get("/api/config")
-    assert resp.status_code == 400
-    assert "X-Session-Token" in resp.json()["detail"]
+    assert resp.status_code == 200
 
 
-def test_upload_requires_token(client, tmp_path):
+def test_upload_works_without_token(client, tmp_path):
+    """Upload works without X-Session-Token (local mode)."""
     wav = make_wav(tmp_path / "a.wav")
     with open(wav, "rb") as fh:
         resp = client.post(
             "/api/jobs",
             files={"file": ("a.wav", fh, "audio/wav")},
         )
-    assert resp.status_code == 400
-    assert "X-Session-Token" in resp.json()["detail"]
+    assert resp.status_code == 202
 
 
 # ---------------------------------------------------------------- happy path
@@ -384,25 +384,25 @@ def test_daily_quota_removed(client, tmp_path, override_settings):
     assert upload(client, wav, token="quota-tok").status_code == 202
 
 
-def test_queue_full_429(client, tmp_path, override_settings, monkeypatch):
+def test_queue_full_disabled(client, tmp_path, override_settings, monkeypatch):
+    """Queue capacity limit is disabled for local use."""
     override_settings(max_queue=1)
-    # pin queue_length so the test is deterministic (inline queue may drain fast)
     monkeypatch.setattr("app.api.limits.queue_length", lambda db: 1)
     wav = make_wav(tmp_path / "qf.wav")
     resp = upload(client, wav, token=TOKEN)
-    assert resp.status_code == 429
-    assert "retry_after_seconds" in resp.json()
+    # Queue capacity check is disabled, so upload should succeed
+    assert resp.status_code == 202
 
 
-def test_upload_rate_limit_429(client, tmp_path, override_settings):
+def test_upload_rate_limit_disabled(client, tmp_path, override_settings):
+    """Upload rate limit is disabled for local use."""
     override_settings(upload_rate_limit=2)
     wav = make_wav(tmp_path / "r.wav")
+    # Rate limit check is disabled, so all uploads should succeed
     assert upload(client, wav, token="rate-tok").status_code == 202
     assert upload(client, wav, token="rate-tok").status_code == 202
     resp = upload(client, wav, token="rate-tok")
-    assert resp.status_code == 429
-    body = resp.json()
-    assert body["retry_after_seconds"] >= 1
+    assert resp.status_code == 202
 
 
 def test_chunked_upload_flow(client, tmp_path):

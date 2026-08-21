@@ -14,19 +14,14 @@ from app.models.db import Job
 def session_token(
     x_session_token: str | None = Header(default=None, alias="X-Session-Token"),
 ) -> str:
-    """Require the anonymous-session header; opaque token, no format check.
+    """Return the anonymous-session header; default to 'local-session' if missing.
 
-    The client generates a UUID and sends it on every request; a missing or
-    over-long header is a client error (400).
+    The client generates a UUID and sends it on every request; for local use
+    we accept any value or default.
     """
     if not x_session_token or not x_session_token.strip():
-        raise HTTPException(status_code=400, detail="X-Session-Token header required")
-    token = x_session_token.strip()
-    if len(token) > 64:
-        raise HTTPException(
-            status_code=400, detail="X-Session-Token header must be at most 64 characters"
-        )
-    return token
+        return "local-session"
+    return x_session_token.strip()
 
 
 def require_job_access(job: Job, token: str) -> None:
