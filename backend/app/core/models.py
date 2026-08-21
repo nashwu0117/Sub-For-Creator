@@ -52,6 +52,8 @@ class Segment:
     end: float
     text: str
     words: list[Word] = field(default_factory=list)
+    x: float | None = None
+    y: float | None = None
 
     def duration(self) -> float:
         return max(0.0, self.end - self.start)

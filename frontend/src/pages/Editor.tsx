@@ -37,8 +37,8 @@ export default function Editor() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
-  /** transient polling errors (e.g. network hiccup); do not break the editor */
   const [pollNote, setPollNote] = useState<string | null>(null);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null);
 
   const playerRef = useRef<PlayerHandle>(null);
   const waveformRef = useRef<WaveformHandle>(null);
@@ -120,6 +120,22 @@ export default function Editor() {
     setDirty(true);
   }, []);
 
+  const handlePositionChange = useCallback((segmentId: number, x: number, y: number) => {
+    setSegments((prev) =>
+      prev.map((seg) => (seg.id === segmentId ? { ...seg, x, y } : seg))
+    );
+    setDirty(true);
+  }, []);
+
+  const handleSizeChange = useCallback((_segmentId: number, fontSize: number) => {
+    setStyle((prev) => ({ ...prev, fontSize }));
+    setDirty(true);
+  }, []);
+
+  const handleSelectSegment = useCallback((segmentId: number) => {
+    setSelectedSegmentId(segmentId);
+  }, []);
+
   const handleSeek = useCallback((time: number) => {
     setCurrentTime(time);
     playerRef.current?.seek(time);
@@ -144,6 +160,8 @@ export default function Editor() {
         end: s.end,
         text: s.text,
         ...(s.words && s.words.length > 0 ? { words: s.words } : {}),
+        ...(s.x !== undefined ? { x: s.x } : {}),
+        ...(s.y !== undefined ? { y: s.y } : {}),
       }));
       await putSubtitles(jobId, clean);
       setSegments(clean);
@@ -247,7 +265,15 @@ export default function Editor() {
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
             />
-            <SubtitlePreview segments={segments} currentTime={currentTime} style={style} />
+            <SubtitlePreview
+              segments={segments}
+              currentTime={currentTime}
+              style={style}
+              selectedId={selectedSegmentId}
+              onSelect={handleSelectSegment}
+              onPositionChange={handlePositionChange}
+              onSizeChange={handleSizeChange}
+            />
           </div>
           <WaveformTimeline
             ref={waveformRef}
@@ -264,7 +290,9 @@ export default function Editor() {
           <SubtitleList
             segments={segments}
             activeId={activeSegmentId}
+            selectedId={selectedSegmentId}
             onSeek={handleSeek}
+            onSelect={handleSelectSegment}
             onChange={handleSegmentsChange}
             onSave={() => void handleSave()}
             dirty={dirty}

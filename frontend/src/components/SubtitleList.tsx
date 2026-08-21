@@ -6,7 +6,9 @@ import SubtitleItem from "./SubtitleItem";
 interface Props {
   segments: Segment[];
   activeId: number | null;
+  selectedId: number | null;
   onSeek: (time: number) => void;
+  onSelect?: (segmentId: number) => void;
   onChange: (segments: Segment[]) => void;
   onSave: () => void;
   dirty: boolean;
@@ -17,7 +19,9 @@ interface Props {
 export default function SubtitleList({
   segments,
   activeId,
+  selectedId,
   onSeek,
+  onSelect,
   onChange,
   onSave,
   dirty,
@@ -81,7 +85,9 @@ export default function SubtitleList({
               segment={seg}
               index={i}
               active={seg.id === activeId}
+              selected={seg.id === selectedId}
               onSeek={onSeek}
+              onSelect={onSelect}
               onChange={(patch) => updateSegment(seg.id, patch)}
               onDelete={() => deleteSegment(seg.id)}
               onAddToDictionary={onAddToDictionary}

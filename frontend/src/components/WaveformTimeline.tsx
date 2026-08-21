@@ -21,6 +21,7 @@ interface Props {
 }
 
 const REGION_COLOR = "rgba(109, 94, 242, 0.22)";
+const REGION_DRAG_COLOR = "rgba(109, 94, 242, 0.40)";
 const SYNC_DEBOUNCE_MS = 300;
 
 /**
@@ -86,6 +87,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
       drag: true,
       resize: true,
       color: REGION_COLOR,
+      content: seg.text.length > 12 ? seg.text.slice(0, 12) + "…" : seg.text,
     });
     regionsRef.current.set(seg.id, region);
   }, []);
@@ -100,7 +102,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
     ws = WaveSurfer.create({
       container,
       url: audioUrl,
-      height: 72,
+      height: 96,
       waveColor: "#3a4152",
       progressColor: "#6d5ef2",
       cursorColor: "#38bdf8",
@@ -130,7 +132,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
 
     // 使用者點擊波形任意處 → 影片跳轉
     ws.on("interaction", () => {
-      if (ws) callbacksRef.current.onSeek(ws.getCurrentTime());
+      if (ws && !scrubbingRef.current) callbacksRef.current.onSeek(ws.getCurrentTime());
     });
 
     ws.on("error", () => {
@@ -138,12 +140,14 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
       setHidden(true);
     });
 
-    regions.on("region-update", () => {
+    regions.on("region-update", (region: Region) => {
       scrubbingRef.current = true;
+      region.setOptions({ color: REGION_DRAG_COLOR });
       scheduleSync();
     });
-    regions.on("region-updated", () => {
+    regions.on("region-updated", (region: Region) => {
       scrubbingRef.current = false;
+      region.setOptions({ color: REGION_COLOR });
       flushSync();
     });
     regions.on("region-clicked", (region) => {
@@ -163,7 +167,7 @@ const WaveformTimeline = forwardRef<WaveformHandle, Props>(function WaveformTime
 
   // segments 變更 → 同步 regions（新增 / 更新 / 移除）
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || scrubbingRef.current) return;
     const seen = new Set<number>();
     for (const seg of segments) {
       seen.add(seg.id);

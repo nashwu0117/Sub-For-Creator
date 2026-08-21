@@ -6,7 +6,9 @@ interface Props {
   segment: Segment;
   index: number;
   active: boolean;
+  selected?: boolean;
   onSeek: (time: number) => void;
+  onSelect?: (segmentId: number) => void;
   onChange: (patch: Partial<Segment>) => void;
   onDelete: () => void;
   onAddToDictionary: (text: string) => Promise<void>;
@@ -38,7 +40,9 @@ export default function SubtitleItem({
   segment,
   index,
   active,
+  selected,
   onSeek,
+  onSelect,
   onChange,
   onDelete,
   onAddToDictionary,
@@ -79,8 +83,11 @@ export default function SubtitleItem({
 
   return (
     <div
-      className={`subtitle-item${active ? " active" : ""}`}
-      onClick={() => onSeek(segment.start)}
+      className={`subtitle-item${active ? " active" : ""}${selected ? " selected" : ""}`}
+      onClick={() => {
+        onSeek(segment.start);
+        onSelect?.(segment.id);
+      }}
       aria-current={active ? "true" : undefined}
     >
       <div className="subtitle-item-top">
@@ -218,6 +225,28 @@ export default function SubtitleItem({
         onClick={(e) => e.stopPropagation()}
         onChange={(e) => onChange({ text: e.target.value })}
       />
+      {(segment.x !== undefined || segment.y !== undefined) && (
+        <div className="subtitle-position-info">
+          <span className="position-label">
+            Position: {Math.round(segment.x ?? 50)}%, {Math.round(segment.y ?? 88)}%
+          </span>
+          <button
+            type="button"
+            className="nudge-btn"
+            title="Reset position"
+            aria-label="Reset position"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange({ x: undefined, y: undefined });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

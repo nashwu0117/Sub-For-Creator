@@ -1270,37 +1270,103 @@ textarea {
 }
 
 /* 字幕預覽疊層 */
-.subtitle-preview {
+.subtitle-preview-container {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset: 0;
   pointer-events: none;
-  text-align: center;
-  padding: 0 var(--space-4);
   z-index: 5;
 }
 
-.subtitle-preview.is-bottom {
-  bottom: 12%;
+.subtitle-preview-box {
+  position: absolute;
+  display: inline-block;
+  max-width: 80%;
+  min-width: 40px;
+  padding: 8px 14px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: grab;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  pointer-events: auto;
+  box-sizing: border-box;
 }
 
-.subtitle-preview.is-top {
-  top: 6%;
+.subtitle-preview-box:hover {
+  border-color: rgba(109, 94, 242, 0.4);
+}
+
+.subtitle-preview-box.selected {
+  border-color: var(--accent-2, #38bdf8);
+  box-shadow: 0 0 0 1px var(--accent-2, #38bdf8), 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.subtitle-preview-box.dragging {
+  cursor: grabbing;
+  border-color: var(--accent-1, #6d5ef2);
+  box-shadow: 0 0 0 2px rgba(109, 94, 242, 0.4), var(--shadow-md);
+  opacity: 0.92;
+}
+
+.subtitle-preview-box.resizing {
+  cursor: default;
 }
 
 .subtitle-preview-text {
-  display: inline-block;
-  max-width: 100%;
+  position: relative;
+  display: inline;
   font-size: var(--preview-font-size, 64px);
   line-height: 1.35;
   font-weight: 700;
   word-break: break-word;
   text-wrap: balance;
+  user-select: none;
+  pointer-events: none;
 }
 
 .subtitle-preview-text .word-done {
   color: var(--accent-2);
 }
+
+.subtitle-resize-handles {
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--accent-2, #38bdf8);
+  border: 2px solid var(--surface, #1a1d27);
+  border-radius: 50%;
+  pointer-events: auto;
+  z-index: 10;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.resize-handle:hover {
+  transform: scale(1.3);
+  background: var(--accent-1, #6d5ef2);
+}
+
+.resize-handle-nw { top: 0; left: 0; transform: translate(-50%, -50%); }
+.resize-handle-n { top: 0; left: 50%; transform: translate(-50%, -50%); }
+.resize-handle-ne { top: 0; right: 0; transform: translate(50%, -50%); }
+.resize-handle-e { top: 50%; right: 0; transform: translate(50%, -50%); }
+.resize-handle-se { bottom: 0; right: 0; transform: translate(50%, 50%); }
+.resize-handle-s { bottom: 0; left: 50%; transform: translate(-50%, 50%); }
+.resize-handle-sw { bottom: 0; left: 0; transform: translate(-50%, 50%); }
+.resize-handle-w { top: 50%; left: 0; transform: translate(-50%, -50%); }
+
+.resize-handle-nw:hover { transform: translate(-50%, -50%) scale(1.3); }
+.resize-handle-n:hover { transform: translate(-50%, -50%) scale(1.3); }
+.resize-handle-ne:hover { transform: translate(50%, -50%) scale(1.3); }
+.resize-handle-e:hover { transform: translate(50%, -50%) scale(1.3); }
+.resize-handle-se:hover { transform: translate(50%, 50%) scale(1.3); }
+.resize-handle-s:hover { transform: translate(-50%, 50%) scale(1.3); }
+.resize-handle-sw:hover { transform: translate(-50%, 50%) scale(1.3); }
+.resize-handle-w:hover { transform: translate(-50%, -50%) scale(1.3); }
 
 /* 波形時間軸 */
 .waveform-card {
@@ -1317,11 +1383,43 @@ textarea {
 
 .waveform-container {
   width: 100%;
-  min-height: 72px;
+  min-height: 96px;
 }
 
-.waveform-container .wavesurfer-region {
-  cursor: pointer;
+.waveform-container [part^="region"] {
+  cursor: grab;
+}
+
+.waveform-container [part^="region"]:hover {
+  box-shadow: 0 0 0 1px var(--accent-2), 0 0 18px rgba(56, 189, 248, 0.16);
+}
+
+.waveform-container [part^="region"]:active {
+  cursor: grabbing;
+}
+
+.waveform-container [part*="region-handle"] {
+  cursor: ew-resize;
+  width: 8px !important;
+  min-width: 8px;
+  max-width: 8px;
+}
+
+.waveform-container [part*="region-handle-left"] {
+  border-left: 3px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.15), transparent) !important;
+}
+
+.waveform-container [part*="region-handle-right"] {
+  border-right: 3px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(270deg, rgba(255,255,255,0.15), transparent) !important;
+}
+
+.waveform-container [part*="region-handle"]:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.9) !important;
 }
 
 .waveform-empty {
@@ -1388,6 +1486,16 @@ textarea {
   border-color: var(--accent-1);
   background: var(--accent-soft);
   box-shadow: 0 0 0 1px var(--accent-1);
+}
+
+.subtitle-item.selected {
+  border-color: var(--accent-2, #38bdf8);
+  box-shadow: 0 0 0 1px var(--accent-2, #38bdf8);
+}
+
+.subtitle-item.active.selected {
+  border-color: var(--accent-1);
+  box-shadow: 0 0 0 1px var(--accent-1), 0 0 0 3px var(--accent-2, #38bdf8);
 }
 
 .subtitle-item:focus-visible {
@@ -1598,6 +1706,21 @@ textarea {
   outline: none;
   border-color: var(--accent-1);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.subtitle-position-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.position-label {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
 }
 
 .subtitle-add {
@@ -2378,6 +2501,10 @@ body {
   box-shadow: 0 0 0 1px var(--accent-1), 0 10px 24px rgba(109, 94, 242, 0.12);
 }
 
+.subtitle-item.selected {
+  box-shadow: 0 0 0 1px var(--accent-2, #38bdf8), 0 10px 24px rgba(56, 189, 248, 0.12);
+}
+
 .subtitle-item:focus-within {
   border-color: var(--focus-ring);
   box-shadow: 0 0 0 3px var(--accent-soft-2);
@@ -2398,24 +2525,54 @@ body {
 }
 
 .waveform-container {
-  touch-action: pan-y;
+  touch-action: none;
   user-select: none;
   cursor: crosshair;
+  position: relative;
 }
 
-.waveform-container .wavesurfer-region {
+.waveform-container [part^="region"] {
   will-change: left, width;
-  transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: grab;
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast), outline var(--transition-fast);
+  outline: 2px solid transparent;
+  outline-offset: -1px;
 }
 
-.waveform-container .wavesurfer-region:hover,
-.waveform-container .wavesurfer-region:focus-visible {
+.waveform-container [part^="region"]:hover {
+  cursor: grab;
   box-shadow: 0 0 0 1px var(--accent-2), 0 0 18px rgba(56, 189, 248, 0.16);
 }
 
-.waveform-container .wavesurfer-region:active {
+.waveform-container [part^="region"]:active {
   transition: none;
+  cursor: grabbing;
   box-shadow: 0 0 0 2px var(--accent-2);
+}
+
+.waveform-container [part*="region-handle"] {
+  cursor: ew-resize;
+  width: 8px !important;
+  min-width: 8px;
+  max-width: 8px;
+  z-index: 10;
+}
+
+.waveform-container [part*="region-handle-left"] {
+  border-left: 3px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.15), transparent) !important;
+}
+
+.waveform-container [part*="region-handle-right"] {
+  border-right: 3px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(270deg, rgba(255,255,255,0.15), transparent) !important;
+}
+
+.waveform-container [part*="region-handle"]:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.9) !important;
 }
 
 .range-input {
@@ -2458,9 +2615,13 @@ body {
     scroll-behavior: auto;
   }
 
-  .waveform-container .wavesurfer-region {
-    transition: none;
-  }
+.waveform-container [part^="region"] {
+  transition: none;
+}
+
+.waveform-container [part*="region-handle"] {
+  transition: none;
+}
 }
 
 /* 觸控裝置沒有 hover：取消懸浮位移，只在按下時回饋 */

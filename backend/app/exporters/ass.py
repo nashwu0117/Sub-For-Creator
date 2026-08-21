@@ -84,6 +84,15 @@ def _dialogue_text(seg: Segment, karaoke: bool, fade: int) -> str:
     return prefix + _escape(seg.text)
 
 
+def _pos_tag(seg: Segment) -> str:
+    """Generate \\pos(x,y) override tag if segment has custom position."""
+    if seg.x is None or seg.y is None:
+        return ""
+    x_abs = int(seg.x * 19.2)  # (x / 100) * 1920
+    y_abs = int(seg.y * 10.8)  # (y / 100) * 1080
+    return f"{{\\pos({x_abs},{y_abs})}}"
+
+
 def export_ass(
     result: TranscriptionResult,
     style: AssStyle | None = None,
@@ -139,8 +148,12 @@ def export_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     for seg in result.segments:
+        pos_tag = _pos_tag(seg)
+        text = _dialogue_text(seg, karaoke, style.fade)
+        if pos_tag:
+            text = pos_tag + text
         lines.append(
             f"Dialogue: 0,{_format_timestamp(seg.start)},{_format_timestamp(seg.end)},"
-            f"{style.style_name},,0,0,0,,{_dialogue_text(seg, karaoke, style.fade)}"
+            f"{style.style_name},,0,0,0,,{text}"
         )
     return "\n".join(lines) + "\n"

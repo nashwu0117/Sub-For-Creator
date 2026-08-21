@@ -12,6 +12,10 @@ export interface Segment {
   end: number;
   text: string;
   words?: Word[];
+  /** 字幕位置 X 座標（百分比 0-100，預設 50 = 水平置中） */
+  x?: number;
+  /** 字幕位置 Y 座標（百分比 0-100，預設 88 = 底部 12%） */
+  y?: number;
 }
 
 export type JobStatus = "queued" | "processing" | "done" | "failed";

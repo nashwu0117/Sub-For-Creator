@@ -22,6 +22,8 @@ class SegmentIn(BaseModel):
     end: float
     text: str
     words: list[SegmentWordIn] | None = None
+    x: float | None = None
+    y: float | None = None
 
     @model_validator(mode="after")
     def _check_ordering(self) -> SegmentIn:
